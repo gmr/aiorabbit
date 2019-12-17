@@ -22,6 +22,8 @@ The following demonstrates an example of the intended behavior for the library:
 
     import aiorabbit
 
+    RABBITMQ_URL = 'amqps://guest:guest@localhost:5672/%2f'
+
 
     async def main():
         client = aiorabbit.Client(RABBITMQ_URL)
