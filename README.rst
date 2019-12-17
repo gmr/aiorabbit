@@ -8,7 +8,7 @@ Project Goals
 -------------
 - To create a simple, robust RabbitMQ client library for AsyncIO development in Python 3
 - To make use of new features and capabilities in Python 3.7+
-- To abstract away the AMQP channel and use it only as a protocol coordination mechanism
+- To abstract away the AMQP channel and use it only as a protocol coordination mechanism inside the client
 - To provide built-in support for multiple brokers and automatic reconnection
 
 Example Use
