@@ -15,7 +15,7 @@ Example Use
 -----------
 The following demonstrates an example of the intended behavior for the library:
 
-.. code-block::python
+.. code-block:: python
 
     import time
     import uuid
