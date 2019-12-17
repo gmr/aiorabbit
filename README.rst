@@ -29,9 +29,12 @@ The following demonstrates an example of the intended behavior for the library:
         client = aiorabbit.Client(RABBITMQ_URL)
         await client.connect()
         await client.confirm_select()
+
         response = await client.publish(
-            exchange, routing_key, body, app_id='example',
-            message_id=str(uuid.uuid4()), timestamp=int(time.time), mandatory=True)
+            'exchange', 'routing-key', 'message-body', app_id='example',
+            message_id=str(uuid.uuid4()), timestamp=int(time.time),
+            mandatory=True)
+
         if not response.ok:
             print('Publishing failure: {!r} {!r}'.format(
                 response.error, response.message))
