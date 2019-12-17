@@ -4,6 +4,39 @@ aiorabbit is an AsyncIO RabbitMQ client for Python 3.
 
 |Version| |Status| |Coverage| |License|
 
+Project Goals
+-------------
+ - To create a simple, robust RabbitMQ client library for AsyncIO development in Python 3
+ - To make use of new features and capabilities in Python 3.7+
+ - To abstract away the AMQP channel and use it only as a protocol coordination mechanism
+ - To provide built-in support for multiple brokers and automatic reconnection
+
+Example Use
+-----------
+
+.. code-block::
+
+    import time
+    import uuid
+
+    import aiorabbit
+
+
+    async def main():
+        client = aiorabbit.Client(RABBITMQ_URL)
+        await client.connect()
+        await client.confirm_select()
+        response = await client.publish(
+            exchange, routing_key, body, app_id='example',
+            message_id=str(uuid.uuid4()), timestamp=int(time.time), mandatory=True)
+        if not response.ok:
+            print('Publishing failure: {!r} {!r}'.format(
+                response.error, response.message))
+
+    if __name__ == '__main__':
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(main)
+
 Documentation
 -------------
 http://aiorabbit.readthedocs.org
