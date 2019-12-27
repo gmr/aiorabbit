@@ -32,7 +32,7 @@ The following demonstrates an example of the intended behavior for the library:
 
         response = await client.publish(
             'exchange', 'routing-key', 'message-body', app_id='example',
-            message_id=str(uuid.uuid4()), timestamp=int(time.time),
+            message_id=str(uuid.uuid4()), timestamp=int(time.time()),
             mandatory=True)
 
         if not response.ok:
