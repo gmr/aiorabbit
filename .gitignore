@@ -5,3 +5,4 @@ dist/
 env/
 docs/_build
 .idea
+.mypy_cache
