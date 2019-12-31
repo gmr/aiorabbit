@@ -26,8 +26,7 @@ The following demonstrates an example of the intended behavior for the library:
 
 
     async def main():
-        client = aiorabbit.Client(RABBITMQ_URL)
-        await client.connect()
+        client = await aiorabbit.connect(RABBITMQ_URL)
         await client.confirm_select()
 
         response = await client.publish(
@@ -40,8 +39,7 @@ The following demonstrates an example of the intended behavior for the library:
                 response.error, response.message))
 
     if __name__ == '__main__':
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(main)
+        asyncio.run(main())
 
 Documentation
 -------------
