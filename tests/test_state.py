@@ -1,5 +1,4 @@
 import asyncio
-import typing
 import unittest
 
 from aiorabbit import exceptions, state
@@ -7,19 +6,19 @@ from aiorabbit import exceptions, state
 
 class Test(state.StateManager):
 
-    STATE_UNINITIALIZED: typing.Final[int] = 0x00
-    STATE_FOO: typing.Final[int] = 0x01
-    STATE_BAR: typing.Final[int] = 0x02
-    STATE_BAZ: typing.Final[int] = 0x03
+    STATE_UNINITIALIZED = 0x00
+    STATE_FOO = 0x01
+    STATE_BAR = 0x02
+    STATE_BAZ = 0x03
 
-    STATE_MAP: typing.Final[dict] = {
+    STATE_MAP = {
         STATE_UNINITIALIZED: 'Uninitialized',
         STATE_FOO: 'Foo',
         STATE_BAR: 'Bar',
         STATE_BAZ: 'Baz',
 
     }
-    STATE_TRANSITIONS: dict = {
+    STATE_TRANSITIONS = {
         STATE_UNINITIALIZED: {STATE_FOO, STATE_BAR},
         STATE_FOO: {STATE_BAR},
         STATE_BAR: {STATE_BAZ},

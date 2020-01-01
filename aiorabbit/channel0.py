@@ -26,7 +26,7 @@ COMMANDS = typing.Union[commands.Connection.Blocked,
                         commands.Connection.CloseOk,
                         heartbeat.Heartbeat]
 
-FRAMES: typing.Final[set] = {
+FRAMES = {
     'Connection.Blocked',
     'Connection.Unblocked',
     'Connection.Start',
@@ -40,24 +40,24 @@ FRAMES: typing.Final[set] = {
 
 class Channel0(state.StateManager):
 
-    STATE_UNINITIALIZED: typing.Final[int] = 0x00
-    STATE_PROTOCOL_HEADER_SENT: typing.Final[int] = 0x01
-    STATE_START_RECEIVED: typing.Final[int] = 0x02
-    STATE_START_OK_SENT: typing.Final[int] = 0x03
-    STATE_TUNE_RECEIVED: typing.Final[int] = 0x04
-    STATE_TUNE_OK_SENT: typing.Final[int] = 0x05
-    STATE_OPEN_SENT: typing.Final[int] = 0x06
-    STATE_OPEN_OK_RECEIVED: typing.Final[int] = 0x07
-    STATE_HEARTBEAT_RECEIVED: typing.Final[int] = 0x08
-    STATE_HEARTBEAT_SENT: typing.Final[int] = 0x09
-    STATE_CLOSE_RECEIVED: typing.Final[int] = 0x10
-    STATE_CLOSE_SENT: typing.Final[int] = 0x11
-    STATE_CLOSE_OK_SENT: typing.Final[int] = 0x12
-    STATE_BLOCKED_RECEIVED: typing.Final[int] = 0x13
-    STATE_UNBLOCKED_RECEIVED: typing.Final[int] = 0x14
-    STATE_CLOSED: typing.Final[int] = 0x15
+    STATE_UNINITIALIZED = 0x00
+    STATE_PROTOCOL_HEADER_SENT = 0x01
+    STATE_START_RECEIVED = 0x02
+    STATE_START_OK_SENT = 0x03
+    STATE_TUNE_RECEIVED = 0x04
+    STATE_TUNE_OK_SENT = 0x05
+    STATE_OPEN_SENT = 0x06
+    STATE_OPEN_OK_RECEIVED = 0x07
+    STATE_HEARTBEAT_RECEIVED = 0x08
+    STATE_HEARTBEAT_SENT = 0x09
+    STATE_CLOSE_RECEIVED = 0x10
+    STATE_CLOSE_SENT = 0x11
+    STATE_CLOSE_OK_SENT = 0x12
+    STATE_BLOCKED_RECEIVED = 0x13
+    STATE_UNBLOCKED_RECEIVED = 0x14
+    STATE_CLOSED = 0x15
 
-    STATE_MAP: typing.Final[dict] = {
+    STATE_MAP = {
         0x00: 'Uninitialized',
         0x01: 'Protocol Header Received',
         0x02: 'Start Received',
@@ -76,7 +76,7 @@ class Channel0(state.StateManager):
         0x15: 'Closed'
     }
 
-    STATE_TRANSITIONS: typing.Final[dict] = {
+    STATE_TRANSITIONS = {
         STATE_UNINITIALIZED: {
             STATE_PROTOCOL_HEADER_SENT},
         STATE_PROTOCOL_HEADER_SENT: {

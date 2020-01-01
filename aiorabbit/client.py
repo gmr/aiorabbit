@@ -30,16 +30,16 @@ Frame = typing.Union[base.Frame,
 
 class Client(state.StateManager):
     """RabbitMQ Client"""
-    STATE_UNINITIALIZED: typing.Final[int] = 0x00
-    STATE_DISCONNECTED: typing.Final[int] = 0x01
-    STATE_CONNECTING: typing.Final[int] = 0x02
-    STATE_CONNECTED: typing.Final[int] = 0x03
-    STATE_OPENING: typing.Final[int] = 0x04
-    STATE_OPENED: typing.Final[int] = 0x05
-    STATE_CLOSING: typing.Final[int] = 0x06
-    STATE_CLOSED: typing.Final[int] = 0x07
+    STATE_UNINITIALIZED = 0x00
+    STATE_DISCONNECTED = 0x01
+    STATE_CONNECTING = 0x02
+    STATE_CONNECTED = 0x03
+    STATE_OPENING = 0x04
+    STATE_OPENED = 0x05
+    STATE_CLOSING = 0x06
+    STATE_CLOSED = 0x07
 
-    STATE_MAP: dict = {
+    STATE_MAP = {
         0x00: 'Uninitialized',
         0x01: 'Disconnected',
         0x02: 'Connecting',
@@ -50,7 +50,7 @@ class Client(state.StateManager):
         0x07: 'Closed'
     }
 
-    STATE_TRANSITIONS: dict = {
+    STATE_TRANSITIONS = {
         STATE_UNINITIALIZED: {STATE_DISCONNECTED},
         STATE_DISCONNECTED: {STATE_CONNECTING},
         STATE_CONNECTING: {STATE_DISCONNECTED, STATE_CONNECTED},
