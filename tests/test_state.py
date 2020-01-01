@@ -1,6 +1,6 @@
 import asyncio
-import unittest
 import typing
+import unittest
 
 from aiorabbit import exceptions, state
 
