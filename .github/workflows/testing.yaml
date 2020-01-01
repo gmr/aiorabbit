@@ -20,8 +20,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v1
 
+      - name: Setup environment
+        run: apk --update add gcc make musl-dev linux-headers
+
       - name: Install testing dependencies
-        run: pip3 install -e '.[test]'
+        run: pip3 --no-cache-dir install -e '.[test]'
 
       - name: Create build directory
         run: mkdir build
