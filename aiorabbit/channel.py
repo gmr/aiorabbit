@@ -4,8 +4,6 @@ Channel
 
 """
 import asyncio
-import logging
-import typing
 
 from aiorabbit import state
 
