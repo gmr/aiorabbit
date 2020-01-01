@@ -3,7 +3,6 @@ aiorabbit Exceptions
 ====================
 
 """
-from pamqp.exceptions import *
 
 
 class AIORabbitException(Exception):
@@ -15,4 +14,8 @@ class ClientNegotiationException(AIORabbitException):
 
 
 class ConnectionClosedException(AIORabbitException):
+    pass
+
+
+class StateTransitionError(AIORabbitException):
     pass
