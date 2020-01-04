@@ -29,12 +29,12 @@ jobs:
     container:
       image: python:${{ matrix.python }}-alpine
       env:
-        RABBITMQ_URI: amqp://guest:guest@rabbitmq:${{ job.services.test.ports['5672'] }}/%2F
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
 
-      - name: Setup environment
+      - name: Install OS dependencies
         run: apk --update add gcc make musl-dev linux-headers
 
       - name: Install testing dependencies
@@ -42,6 +42,14 @@ jobs:
 
       - name: Create build directory
         run: mkdir build
+
+      - name: Create build/test-environment
+        run: |
+          echo "export RABBITMQ_URI=amqp://guest:guest@rabbitmq:${{ job.services.test.ports['5672'] }}/%2f" > build/test-environment
+
+      - name: Cat build/test-environment
+        run: |
+          cat build/test-environment
 
       - name: Run flake8 tests
         run: flake8 --output build/flake8.txt --tee
