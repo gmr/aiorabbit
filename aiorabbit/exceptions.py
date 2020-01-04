@@ -19,3 +19,7 @@ class ConnectionClosedException(AIORabbitException):
 
 class StateTransitionError(AIORabbitException):
     pass
+
+
+class NotSupportedError(AIORabbitException):
+    pass
