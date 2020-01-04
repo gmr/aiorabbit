@@ -5,7 +5,7 @@ aiorabbit
 import asyncio
 import typing
 
-version = '0.1.0'
+version = '0.1.0a1'
 
 DEFAULT_LOCALE = 'en-US'
 DEFAULT_PRODUCT = 'aiorabbitmq'
