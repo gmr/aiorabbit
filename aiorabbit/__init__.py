@@ -2,8 +2,6 @@
 aiorabbit
 =========
 """
-from __future__ import annotations
-
 import asyncio
 import typing
 
@@ -17,7 +15,8 @@ DEFAULT_URL: typing.Final[str] = 'amqp://guest:guest@localhost:5672/%2f'
 async def connect(url: str = DEFAULT_URL,
                   locale: str = DEFAULT_LOCALE,
                   product: str = DEFAULT_PRODUCT,
-                  loop: typing.Optional[asyncio.AbstractEventLoop] = None):
+                  loop: typing.Optional[asyncio.AbstractEventLoop] = None) \
+        -> 'aiorabbit.client.Client':
     """Connect to RabbitMQ, returning a :py:class:`asyncio.client.Client`
     instance.
 

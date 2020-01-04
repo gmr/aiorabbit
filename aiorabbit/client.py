@@ -525,11 +525,11 @@ class Client(state.StateManager):
             return False
 
     @property
-    def server_capabilities(self):
+    def server_capabilities(self) -> dict:
         return self._channel0.properties['capabilities']
 
     @property
-    def server_properties(self):
+    def server_properties(self) -> dict:
         return self._channel0.properties
 
     async def _connect(self) -> None:
@@ -556,13 +556,13 @@ class Client(state.StateManager):
             raise
         self._set_state(self.STATE_CONNECTED)
 
-    async def _on_connected(self):
+    async def _on_connected(self) -> None:
         self._set_state(self.STATE_OPENING)
         self._max_frame_size = float(self._channel0.max_frame_size)
         await self._channel0.open(self._transport)
         self._set_state(self.STATE_OPENED)
 
-    async def _on_disconnected(self):
+    async def _on_disconnected(self) -> None:
         LOGGER.critical('Connection Lost')
         self._set_state(self.STATE_CLOSED)
 
@@ -576,7 +576,7 @@ class Client(state.StateManager):
         else:
             raise RuntimeError('Main commands not supported yet')
 
-    async def _open_channel(self):
+    async def _open_channel(self) -> None:
         self._channel += 1
         if self._channel > self._channel0.max_channels:
             self._channel = 1
@@ -585,8 +585,8 @@ class Client(state.StateManager):
         await self._wait_on_state(self.STATE_CHANNEL_OPENOK_RECEIVED)
 
     @property
-    def _connect_timeout(self):
-        temp = self._url.query.get('connection_timeout')
+    def _connect_timeout(self) -> float:
+        temp = self._url.query.get('connection_timeout', '3.0')
         return socket.getdefaulttimeout() if temp is None else float(temp)
 
     def _write(self, value: frame.FrameTypes) -> None:
