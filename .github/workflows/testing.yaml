@@ -28,8 +28,6 @@ jobs:
         python: [3.7, 3.8]
     container:
       image: python:${{ matrix.python }}-alpine
-      env:
-        RABBITMQ_PORT: ${{ services.rabbitmq.ports['5672'] }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
