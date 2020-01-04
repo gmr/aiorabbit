@@ -28,7 +28,7 @@ jobs:
     container:
       image: python:${{ matrix.python }}-alpine
       env:
-        RABBITMQ_URI: amqp://guest:guest@localhost:5672/%2F
+        RABBITMQ_URI: amqp://guest:guest@rabbitmq:5672/%2F
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
