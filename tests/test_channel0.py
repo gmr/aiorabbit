@@ -125,7 +125,7 @@ class RemoteCloseTestCase(TestCase):
         self.loop.run_until_complete(self.open())
         with self.assertRaises(exceptions.ConnectionClosedException):
             self.channel0.process(
-                commands.Connection.Close(999, 'Error', 0, 0))
+                commands.Connection.Close(999, 'Error'))
         self.assert_state(self.channel0.STATE_CLOSE_OK_SENT)
 
     def test_with_invalid_path(self):
@@ -203,6 +203,6 @@ class SmallerClientHeartbeatTestCase(TestCase):
 
 class InvalidFrameTestCase(TestCase):
 
-    def test_negotiated_interval(self):
+    def test_invalid_frame_raises(self):
         with self.assertRaises(exceptions.AIORabbitException):
             self.channel0.process(commands.Basic.Cancel('foo'))
