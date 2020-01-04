@@ -11,11 +11,25 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      rabbitmq:
+        image: rabbitmq:3-management-alpine
+        options: >-
+          --health-cmd /opt/rabbitmq/sbin/rabbitmqctl node_health_check
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 5
+      retries: 3
+        ports:
+          - 5672
+          - 15672
     strategy:
       matrix:
         python: [3.7, 3.8]
     container:
       image: python:${{ matrix.python }}-alpine
+      env:
+        RABBITMQ_URI: amqp://guest:guest@localhost:5672/%2F
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
