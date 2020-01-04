@@ -11,7 +11,7 @@ import socket
 import typing
 from urllib import parse
 
-from pamqp import base, body, frame, commands, header, heartbeat
+from pamqp import base, body, commands, frame, header, heartbeat
 import yarl
 
 from aiorabbit import (channel0,
@@ -588,7 +588,6 @@ class Client(state.StateManager):
     def _connect_timeout(self):
         temp = self._url.query.get('connection_timeout')
         return socket.getdefaulttimeout() if temp is None else float(temp)
-
 
     def _write(self, value: frame.FrameTypes) -> None:
         self._transport.write(frame.marshal(value, self._channel))
