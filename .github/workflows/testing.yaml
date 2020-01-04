@@ -15,7 +15,7 @@ jobs:
       rabbitmq:
         image: rabbitmq:3-management-alpine
         options: >-
-          --health-cmd /opt/rabbitmq/sbin/rabbitmqctl node_health_check
+          --health-cmd "/opt/rabbitmq/sbin/rabbitmqctl node_health_check"
           --health-interval 10s
           --health-timeout 10s
           --health-retries 5
