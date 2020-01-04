@@ -5,18 +5,17 @@ aiorabbit
 import asyncio
 import typing
 
-version: typing.Final[str] = '0.1.0'
+version = '0.1.0'
 
-DEFAULT_LOCALE: typing.Final[str] = 'en-US'
-DEFAULT_PRODUCT: typing.Final[str] = 'aiorabbitmq'
-DEFAULT_URL: typing.Final[str] = 'amqp://guest:guest@localhost:5672/%2f'
+DEFAULT_LOCALE = 'en-US'
+DEFAULT_PRODUCT = 'aiorabbitmq'
+DEFAULT_URL = 'amqp://guest:guest@localhost:5672/%2f'
 
 
 async def connect(url: str = DEFAULT_URL,
                   locale: str = DEFAULT_LOCALE,
                   product: str = DEFAULT_PRODUCT,
-                  loop: typing.Optional[asyncio.AbstractEventLoop] = None) \
-        -> 'aiorabbit.client.Client':
+                  loop: typing.Optional[asyncio.AbstractEventLoop] = None):
     """Connect to RabbitMQ, returning a :py:class:`asyncio.client.Client`
     instance.
 
