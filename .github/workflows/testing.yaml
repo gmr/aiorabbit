@@ -43,11 +43,13 @@ jobs:
 
       - name: Create build/test-environment
         run: |
-          echo "export RABBITMQ_URI=amqp://guest:guest@rabbitmq:${{ job.services.test.ports['5672'] }}/%2f" > build/test-environment
+          echo "export RABBITMQ_URI=amqp://guest:guest@rabbitmq:${{ job.services.rabbitmq.ports['5672'] }}/%2f" > build/test-environment
 
       - name: Cat build/test-environment
-        run: |
-          cat build/test-environment
+        run: cat build/test-environment
+
+      - name: Show environment variables
+        run: set
 
       - name: Run flake8 tests
         run: flake8 --output build/flake8.txt --tee
