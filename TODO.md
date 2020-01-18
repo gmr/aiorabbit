@@ -2,7 +2,7 @@ Supported AMQ Methods
 =====================
 
 | AMQ Method                     | Completed |
-|--------------------------------|-----------|
+|--------------------------------|:---------:|
 | Basic.Ack                      |           |
 | Basic.Cancel                   |           |
 | Basic.Consume                  |           |
