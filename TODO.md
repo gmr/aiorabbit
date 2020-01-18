@@ -9,23 +9,23 @@ Supported AMQ Methods
 | Basic.Deliver                  |           |
 | Basic.Get                      |           |
 | Basic.Nack                     |           |
-| Basic.Publish                  |     ✔     |
+| Basic.Publish                  |   :+1:    |
 | Basic.Qos                      |           |
 | Basic.Recover                  |           |
-| Basic.RecoverAsync             |     ✗     |
+| Basic.RecoverAsync             |   :x:     |
 | Basic.Reject                   |           |
 | Basic.Return                   |           |
 | Channel.Close                  |           |
 | Channel.Flow                   |           |
 | Channel.Open                   |           |
-| Confirm.Select                 |     ✔     |
-| Connection.Blocked             |     ✔     |
-| Connection.Close               |     ✔     |
-| Connection.Open                |     ✔     |
-| Connection.Secure              |     ?     |
-| Connection.Start               |     ✔     |
-| Connection.Tune                |     ✔     |
-| Connection.Unblocked           |     ✔     |
+| Confirm.Select                 |   :+1:    |
+| Connection.Blocked             |   :+1:    |
+| Connection.Close               |   :+1:    |
+| Connection.Open                |   :+1:    |
+| Connection.Secure              |  :mag:    |
+| Connection.Start               |   :+1:    |
+| Connection.Tune                |   :+1:    |
+| Connection.Unblocked           |   :+1:    |
 | Connection.UpdateSecret        |           |
 | Exchange.Bind                  |           |
 | Exchange.Declare               |           |
@@ -40,5 +40,6 @@ Supported AMQ Methods
 | Tx.Rollback                    |           |
 | Tx.Select                      |           |
   
-  ✗ - Not supported or deprecated in RabbitMQ
-  ? - Connection.Secure can be used with a plugin, need use case for implementation.
+:x: - Not supported or deprecated in RabbitMQ
+
+:mag: - Connection.Secure can be used with a plugin, need use case for implementation.
