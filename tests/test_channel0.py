@@ -9,7 +9,7 @@ import uuid
 from pamqp import commands, constants, frame, heartbeat
 from pamqp import exceptions as pamqp_exceptions
 
-from aiorabbit import channel0, exceptions, version
+from aiorabbit import channel0, exceptions, state, version
 
 LOGGER = logging.getLogger(__name__)
 
@@ -90,11 +90,12 @@ class TestCase(unittest.TestCase):
             raise RuntimeError(count, channel, frame_value)
 
     async def open(self):
-        self.assert_state(self.channel0.STATE_UNINITIALIZED)
+        self.assert_state(state.STATE_UNINITIALIZED)
         await self.channel0.open(self.transport)
 
-    def assert_state(self, state):
-        self.assertEqual(self.channel0.state, self.channel0.STATE_MAP[state])
+    def assert_state(self, value):
+        self.assertEqual(
+            self.channel0.state_description(value), self.channel0.state)
 
     def test_negotiation(self):
         self.loop.run_until_complete(self.open())
@@ -111,7 +112,7 @@ class ProtocolMismatchTestCase(TestCase):
     def test_negotiation(self):
         with self.assertRaises(exceptions.ClientNegotiationException):
             self.loop.run_until_complete(self.open())
-        self.assert_state(self.channel0.STATE_CLOSED)
+        self.assert_state(state.STATE_EXCEPTION)
 
 
 class RemoteCloseTestCase(TestCase):
@@ -119,42 +120,42 @@ class RemoteCloseTestCase(TestCase):
     def test_with_remote_200(self):
         self.loop.run_until_complete(self.open())
         self.channel0.process(commands.Connection.Close(200, 'OK'))
-        self.assert_state(self.channel0.STATE_CLOSE_OK_SENT)
+        self.assert_state(channel0.STATE_CLOSE_OK_SENT)
 
     def test_with_fake_code(self):
         self.loop.run_until_complete(self.open())
         with self.assertRaises(exceptions.ConnectionClosedException):
             self.channel0.process(
                 commands.Connection.Close(999, 'Error'))
-        self.assert_state(self.channel0.STATE_CLOSE_OK_SENT)
+        self.assert_state(state.STATE_EXCEPTION)
 
     def test_with_invalid_path(self):
         self.loop.run_until_complete(self.open())
         with self.assertRaises(pamqp_exceptions.AMQPInvalidPath):
             self.channel0.process(
                 commands.Connection.Close(402, 'INVALID-PATH'))
-        self.assert_state(self.channel0.STATE_CLOSE_OK_SENT)
+        self.assert_state(state.STATE_EXCEPTION)
 
 
 class ClientCloseTestCase(TestCase):
 
     def test_close(self):
         self.loop.run_until_complete(self.open())
-        self.assert_state(self.channel0.STATE_OPEN_OK_RECEIVED)
+        self.assert_state(channel0.STATE_OPEN_OK_RECEIVED)
         self.loop.run_until_complete(self.channel0.close())
-        self.assert_state(self.channel0.STATE_CLOSED)
+        self.assert_state(channel0.STATE_CLOSED)
 
 
 class ConnectionBlockedTestCase(TestCase):
 
     def test_block_unblock(self):
         self.loop.run_until_complete(self.open())
-        self.assert_state(self.channel0.STATE_OPEN_OK_RECEIVED)
+        self.assert_state(channel0.STATE_OPEN_OK_RECEIVED)
         self.channel0.process(commands.Connection.Blocked())
-        self.assert_state(self.channel0.STATE_BLOCKED_RECEIVED)
+        self.assert_state(channel0.STATE_BLOCKED_RECEIVED)
         self.assertTrue(self.channel0.blocked.is_set())
         self.channel0.process(commands.Connection.Unblocked())
-        self.assert_state(self.channel0.STATE_UNBLOCKED_RECEIVED)
+        self.assert_state(channel0.STATE_UNBLOCKED_RECEIVED)
         self.assertFalse(self.channel0.blocked.is_set())
 
 
@@ -162,9 +163,9 @@ class HeartbeatTestCase(TestCase):
 
     def test_heartbeat(self):
         self.loop.run_until_complete(self.open())
-        self.assert_state(self.channel0.STATE_OPEN_OK_RECEIVED)
+        self.assert_state(channel0.STATE_OPEN_OK_RECEIVED)
         self.channel0.process(heartbeat.Heartbeat())
-        self.assert_state(self.channel0.STATE_HEARTBEAT_SENT)
+        self.assert_state(channel0.STATE_HEARTBEAT_SENT)
         self.assertTrue(self.heartbeat.is_set())
 
 
@@ -175,7 +176,7 @@ class NoHeartbeatTestCase(TestCase):
 
     def test_negotiated_interval(self):
         self.loop.run_until_complete(self.open())
-        self.assert_state(self.channel0.STATE_OPEN_OK_RECEIVED)
+        self.assert_state(channel0.STATE_OPEN_OK_RECEIVED)
         self.assertEqual(self.channel0.heartbeat_interval, 0)
 
 
@@ -186,7 +187,7 @@ class NoClientHeartbeatTestCase(TestCase):
 
     def test_negotiated_interval(self):
         self.loop.run_until_complete(self.open())
-        self.assert_state(self.channel0.STATE_OPEN_OK_RECEIVED)
+        self.assert_state(channel0.STATE_OPEN_OK_RECEIVED)
         self.assertEqual(self.channel0.heartbeat_interval, 0)
 
 
@@ -197,7 +198,7 @@ class SmallerClientHeartbeatTestCase(TestCase):
 
     def test_negotiated_interval(self):
         self.loop.run_until_complete(self.open())
-        self.assert_state(self.channel0.STATE_OPEN_OK_RECEIVED)
+        self.assert_state(channel0.STATE_OPEN_OK_RECEIVED)
         self.assertEqual(self.channel0.heartbeat_interval, 10)
 
 
