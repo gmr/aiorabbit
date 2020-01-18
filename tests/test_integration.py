@@ -1,50 +1,82 @@
 import asyncio
+import logging
 import os
-import unittest
 from unittest import mock
 
-from aiorabbit import client
+from pamqp import commands
+from pamqp import exceptions as pamqp_exceptions
+
+import aiorabbit
+from aiorabbit import client, exceptions, state
+
+from . import testing
 
 
-class IntegrationTestCase(unittest.TestCase):
+class ContextManagerTestCase(testing.AsyncTestCase):
 
-    def setUp(self) -> None:
-        self.loop = asyncio.get_event_loop()
-        self.rabbitmq_url = os.environ['RABBITMQ_URI']
-        self.client = client.Client(self.rabbitmq_url, loop=self.loop)
-        self.timeout_handle = self.loop.call_later(3, self.on_timeout)
-        # self.loop.set_exception_handler(self.on_exception)
+    @testing.async_test
+    async def test_context_manager_open(self):
+        async with aiorabbit.connect(
+                os.environ['RABBITMQ_URI'], loop=self.loop) as c:
+            await c.confirm_select()
+            self.assertEqual(c._state, client.STATE_CONFIRM_SELECTOK_RECEIVED)
+        self.assertEqual(c._state, client.STATE_CLOSED)
 
-    def tearDown(self):
-        if not self.timeout_handle.cancelled():
-            self.timeout_handle.cancel()
+    @testing.async_test
+    async def test_context_manager_exception(self):
+        async with aiorabbit.connect(
+                os.environ['RABBITMQ_URI'], loop=self.loop) as c:
+            await c.confirm_select()
+            with self.assertRaises(RuntimeError):
+                await c.confirm_select()
+            logging.getLogger(__name__).debug('Should close with swallowing the exception')
+        self.assertEqual(c._state, client.STATE_CLOSED)
 
-    def assert_state(self, state):
-        self.assertEqual(self.client.state, self.client.STATE_MAP[state])
 
-    def on_exception(self, loop, context):
-        self.timeout_handle.cancel()
-        self.loop.stop()
-        raise context['exception']
+class IntegrationTestCase(testing.ClientTestCase):
 
-    def on_timeout(self):
-        self.loop.stop()
-        raise TimeoutError('Test duration exceeded 3 seconds')
+    @testing.async_test
+    async def test_channel_recycling(self):
+        await self.connect()
+        await self.close()
+        self.client._channel = self.client._channel0.max_channels
+        await self.connect()
+        self.assertEqual(self.client._channel, 1)
+        await self.close()
 
-    async def connect(self):
-        self.assert_state(self.client.STATE_DISCONNECTED)
-        await self.client.connect()
-        self.assert_state(self.client.STATE_CHANNEL_OPENOK_RECEIVED)
+    @testing.async_test
+    async def test_double_close(self):
+        await self.connect()
+        await self.close()
+        await self.close()
+
+    @testing.async_test
+    async def test_confirm_select(self):
+        await self.connect()
         await self.client.confirm_select()
-        self.assert_state(self.client.STATE_CONFIRM_SELECTOK_RECEIVED)
-        await self.client.close()
-        self.assert_state(self.client.STATE_CLOSED)
+        self.assert_state(client.STATE_CONFIRM_SELECTOK_RECEIVED)
+        await self.close()
 
-    def test_client(self):
-        self.loop.run_until_complete(self.connect())
+    @testing.async_test
+    async def test_connect_timeout(self):
+        with mock.patch.object(self.loop, 'create_connection') as create_conn:
+            create_conn.side_effect = asyncio.TimeoutError()
+            with self.assertRaises(asyncio.TimeoutError):
+                await self.connect()
 
-    def test_connect_error(self):
+    @testing.async_test
+    async def test_client_close_error(self):
+        await self.connect()
         with mock.patch.object(self.client, 'close') as close:
             close.side_effect = RuntimeError('Faux Exception')
             with self.assertRaises(RuntimeError):
-                self.loop.run_until_complete(self.connect())
+                await self.close()
+
+    @testing.async_test
+    async def test_update_secret_raises(self):
+        await self.connect()
+        with self.assertRaises(pamqp_exceptions.AMQPCommandInvalid):
+            self.client._write(
+                commands.Connection.UpdateSecret('foo', 'bar'))
+            await self.client._wait_on_state(
+                client.STATE_UPDATE_SECRETOK_RECEIVED)
