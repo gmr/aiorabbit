@@ -36,17 +36,18 @@ class AMQP(asyncio.Protocol):
         while self.buffer:
             try:
                 count, channel, value = frame.unmarshal(self.buffer)
-            except exceptions.UnmarshalingException:
+            except exceptions.UnmarshalingException as error:
+                LOGGER.warning('Failed to unmarshal a frame: %r', error)
+                LOGGER.debug('Bad frame: %r', self.buffer)
                 break
             else:
                 LOGGER.debug('Received frame: %r', value)
                 self.buffer = self.buffer[count:]
                 self.loop.call_soon(asyncio.ensure_future,
                                     self.on_frame_received(channel, value))
-                break
 
-    def pause_writing(self) -> None:
+    def pause_writing(self) -> None:  # pragma: nocover
         LOGGER.critical('Should pause writing')
 
-    def resume_writing(self) -> None:
+    def resume_writing(self) -> None:  # pragma: nocover
         LOGGER.info('Can resume writing')
