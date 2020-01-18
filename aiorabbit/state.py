@@ -15,8 +15,14 @@ class StateManager:
     """Base Class used to implement state management"""
 
     STATE_UNINITIALIZED = 0x00
-    STATE_MAP: dict = {}
-    STATE_TRANSITIONS: dict = {}
+    STATE_EXCEPTION = 0x01
+    STATE_MAP: dict = {
+        STATE_UNINITIALIZED: 'Uninitialized',
+        STATE_EXCEPTION: 'Exception Raised'
+    }
+    STATE_TRANSITIONS: dict = {
+        STATE_UNINITIALIZED: [STATE_EXCEPTION]
+    }
 
     def __init__(self, loop: asyncio.AbstractEventLoop):
         self._logger = logging.getLogger(
@@ -37,27 +43,39 @@ class StateManager:
                       _loop: asyncio.AbstractEventLoop,
                       context: typing.Dict[str, typing.Any]) -> None:
         self._logger.debug('Exception on IOLoop: %r', context)
-        raise context['exception']
+        self._set_state(self.STATE_EXCEPTION, context['exception'])
 
     def _set_state(self, new_state: int,
-                   exception: typing.Optional[Exception] = None) -> None:
+                   exc: typing.Optional[Exception] = None) -> None:
+        self._logger.debug('Set state: %r [%r] - Current: %r',
+                           self.STATE_MAP[new_state], exc, self.state)
         if new_state == self._state:
-            self._logger.debug('Same state (%s) reassigned', self.state)
-            self._state_start = self._loop.time()
+            self._logger.debug('Ignoring state reassignment (%r)', self.state)
             return
-        elif new_state not in self.STATE_TRANSITIONS[self._state]:
+        elif new_state not in self.STATE_TRANSITIONS[self._state] \
+                and new_state != self.STATE_EXCEPTION:
             raise exceptions.StateTransitionError(
                 'Invalid state transition from {!r} to {!r}'.format(
                     self.state, self.STATE_MAP[new_state]))
-        self._logger.debug('Transition from %s to %s after %.4f seconds',
-                           self.state, self.STATE_MAP[new_state],
+        self._logger.debug('Transition to %s after %.4f seconds',
+                           self.STATE_MAP[new_state],
                            self._loop.time() - self._state_start)
-        if exception:
-            self._exception = exception
+        if exc:
+            self._exception = exc
+            if new_state != self.STATE_EXCEPTION:
+                new_state = self.STATE_EXCEPTION
+                self._logger.debug('Forcing exception state instead of %r',
+                                   self.STATE_MAP[new_state])
         self._state = new_state
         self._state_start = self._loop.time()
         if self._state in self._waits:
             self._waits[self._state].set()
+        self._logger.debug('Current state: %r [%r]',
+                           self.state, self.exception)
+
+    @property
+    def exception(self) -> typing.Optional[Exception]:
+        return self._exception
 
     async def _wait_on_state(self, *args) -> None:
         """Wait on a specific state value to transition"""

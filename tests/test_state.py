@@ -60,7 +60,7 @@ class TestCase(unittest.TestCase):
         state_start = self.obj._state_start
         self.assert_state(self.obj.STATE_FOO)
         self.obj.set_state(self.obj.STATE_FOO)
-        self.assertNotEqual(state_start, self.obj._state_start)
+        self.assertEqual(state_start, self.obj._state_start)
 
     def test_wait_on_state(self):
 
