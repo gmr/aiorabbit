@@ -314,9 +314,12 @@ class Client(state.StateManager):
         await self._open_channel()
 
     async def close(self) -> None:
-        LOGGER.debug('Invoked Client.close()')
-        if self._channel0.is_closed or not self._transport:
+        LOGGER.debug('Invoked Client.close() while is_closed (%r, %r)',
+                     self.is_closed, self._channel0.is_closed)
+        if self.is_closed or self._channel0.is_closed or not self._transport:
             LOGGER.warning('Connection is already closed')
+            if self._state != STATE_CLOSED:
+                self._set_state(STATE_CLOSED)
             return
         self._set_state(STATE_CLOSING)
         await self._channel0.close()
@@ -484,7 +487,7 @@ class Client(state.StateManager):
             return False
 
     @property
-    def closed(self) -> bool:
+    def is_closed(self) -> bool:
         """Returns `True` if the connection is closed"""
         return self._state in [STATE_CLOSED,
                                state.STATE_EXCEPTION,

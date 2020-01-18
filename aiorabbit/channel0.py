@@ -189,7 +189,9 @@ class Channel0(state.StateManager):
 
     @property
     def is_closed(self) -> bool:
-        return self._state in [STATE_CLOSED, state.STATE_EXCEPTION]
+        return self._state in [STATE_CLOSE_OK_SENT,
+                               STATE_CLOSED,
+                               state.STATE_EXCEPTION]
 
     @staticmethod
     def _negotiate(client: int, server: int) -> int:

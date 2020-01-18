@@ -29,6 +29,14 @@ class ContextManagerTestCase(testing.AsyncTestCase):
                 await c.confirm_select()
         self.assertEqual(c._state, client.STATE_CLOSED)
 
+    @testing.async_test
+    async def test_context_manager_remote_close(self):
+        async with aiorabbit.connect(
+                os.environ['RABBITMQ_URI'], loop=self.loop) as c:
+            await c._on_frame(
+                0, commands.Connection.Close(200, 'Admin Shutdown'))
+        self.assertEqual(c._state, client.STATE_CLOSED)
+
 
 class IntegrationTestCase(testing.ClientTestCase):
 

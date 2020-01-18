@@ -37,7 +37,7 @@ async def connect(url: str = DEFAULT_URL,
     try:
         yield rabbitmq
     finally:
-        if not rabbitmq.closed:
+        if not rabbitmq.is_closed:
             await rabbitmq.close()
         del client
 
