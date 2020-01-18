@@ -43,11 +43,8 @@ class IntegrationTestCase(unittest.TestCase):
     def test_client(self):
         self.loop.run_until_complete(self.connect())
 
-    async def close_error(self):
-        raise RuntimeError('Faux Exception')
-
     def test_connect_error(self):
         with mock.patch.object(self.client, 'close') as close:
-            close.side_effect = self.close_error
+            close.side_effect = RuntimeError('Faux Exception')
             with self.assertRaises(RuntimeError):
                 self.loop.run_until_complete(self.connect())
