@@ -23,6 +23,7 @@ class StateManager:
             dict(inspect.getmembers(self))['__module__'])
         self._exception: typing.Optional[Exception] = None
         self._loop: asyncio.AbstractEventLoop = loop
+        self._loop.set_exception_handler(self._on_exception)
         self._state: int = self.STATE_UNINITIALIZED
         self._state_start: float = self._loop.time()
         self._waits: dict = {}
@@ -32,6 +33,12 @@ class StateManager:
         """Return the current state as descriptive string"""
         return self.STATE_MAP[self._state]
 
+    def _on_exception(self,
+                      _loop: asyncio.AbstractEventLoop,
+                      context: typing.Dict[str, typing.Any]) -> None:
+        self._logger.debug('Exception on IOLoop: %r', context)
+        raise context['exception']
+
     def _set_state(self, new_state: int,
                    exception: typing.Optional[Exception] = None) -> None:
         if new_state == self._state:
@@ -40,8 +47,8 @@ class StateManager:
             return
         elif new_state not in self.STATE_TRANSITIONS[self._state]:
             raise exceptions.StateTransitionError(
-                'Invalid state transition from %r to %r',
-                self.state, self.STATE_MAP[new_state])
+                'Invalid state transition from {!r} to {!r}'.format(
+                    self.state, self.STATE_MAP[new_state]))
         self._logger.debug('Transition from %s to %s after %.4f seconds',
                            self.state, self.STATE_MAP[new_state],
                            self._loop.time() - self._state_start)

@@ -37,7 +37,6 @@ class Client(state.StateManager):
     STATE_DISCONNECTED = 0x01
     STATE_CONNECTING = 0x02
     STATE_CONNECTED = 0x03
-    STATE_OPENING = 0x04
     STATE_OPENED = 0x05
     STATE_CHANNEL_OPEN_SENT = 0x06
     STATE_CHANNEL_OPENOK_RECEIVED = 0x07
@@ -106,7 +105,6 @@ class Client(state.StateManager):
         STATE_DISCONNECTED: 'Disconnected',
         STATE_CONNECTING: 'Connecting',
         STATE_CONNECTED: 'Connected',
-        STATE_OPENING: 'Opening',
         STATE_OPENED: 'Opened',
         STATE_CHANNEL_OPEN_SENT: 'Opening Channel',
         STATE_CHANNEL_OPENOK_RECEIVED: 'Channel Open',
@@ -208,14 +206,11 @@ class Client(state.StateManager):
         STATE_DISCONNECTED: [
             STATE_CONNECTING],
         STATE_CONNECTING: [
-            STATE_DISCONNECTED,
-            STATE_CONNECTED],
+            STATE_CONNECTED,
+            STATE_DISCONNECTED],
         STATE_CONNECTED: [
-            STATE_OPENING,
-            STATE_CLOSING,
-            STATE_CLOSED],
-        STATE_OPENING: [
             STATE_OPENED,
+            STATE_CLOSING,
             STATE_CLOSED],
         STATE_OPENED: [
             STATE_CHANNEL_OPEN_SENT,
@@ -368,7 +363,6 @@ class Client(state.StateManager):
     async def connect(self) -> None:
         """Connect to the RabbitMQ Server"""
         await self._connect()
-        await self._wait_on_state(self.STATE_OPENED)
         await self._open_channel()
 
     async def close(self) -> None:
@@ -554,13 +548,12 @@ class Client(state.StateManager):
         except asyncio.TimeoutError:
             self._set_state(self.STATE_DISCONNECTED)
             raise
-        self._set_state(self.STATE_CONNECTED)
-
-    async def _on_connected(self) -> None:
-        self._set_state(self.STATE_OPENING)
         self._max_frame_size = float(self._channel0.max_frame_size)
         await self._channel0.open(self._transport)
         self._set_state(self.STATE_OPENED)
+
+    async def _on_connected(self) -> None:
+        self._set_state(self.STATE_CONNECTED)
 
     async def _on_disconnected(self) -> None:
         LOGGER.critical('Connection Lost')
