@@ -12,7 +12,7 @@ Supported AMQ Methods
 | Basic.Publish                  |   :+1:    |
 | Basic.Qos                      |           |
 | Basic.Recover                  |           |
-| Basic.RecoverAsync             |   :x:     |
+| Basic.RecoverAsync             |   :-1:    |
 | Basic.Reject                   |           |
 | Basic.Return                   |           |
 | Channel.Close                  |           |
@@ -40,6 +40,6 @@ Supported AMQ Methods
 | Tx.Rollback                    |           |
 | Tx.Select                      |           |
   
-:x: - Not supported or deprecated in RabbitMQ
+:-1: - Not supported or deprecated in RabbitMQ
 
 :mag: - Connection.Secure can be used with a plugin, need use case for implementation.
