@@ -43,4 +43,5 @@ Supported AMQ Methods
 :-1: - Not supported or deprecated in RabbitMQ
 
 :mag: - Connection.Secure can be used with a plugin, need use case for implementation.
+
 :magmag: - Connection.UpdateSecret recently showed up in codegen, but isn't available in RabbitMQ as of 3.8.2.
