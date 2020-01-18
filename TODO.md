@@ -1,9 +1,8 @@
 Supported AMQ Methods
 =====================
 
-|--------------------------------|-----------|
 | AMQ Method                     | Completed |
-|================================|===========|
+|--------------------------------|-----------|
 | Basic.Ack                      |           |
 | Basic.Cancel                   |           |
 | Basic.Consume                  |           |
@@ -40,7 +39,6 @@ Supported AMQ Methods
 | Tx.Commit                      |           |
 | Tx.Rollback                    |           |
 | Tx.Select                      |           |
-|--------------------------------|-----------|
   
   ✗ - Not supported or deprecated in RabbitMQ
   ? - Connection.Secure can be used with a plugin, need use case for implementation.
