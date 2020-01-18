@@ -1,8 +1,6 @@
 import asyncio
-from unittest import mock
 
 from aiorabbit import protocol
-
 from . import testing
 
 

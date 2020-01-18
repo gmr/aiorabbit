@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import os
 from unittest import mock
 
@@ -7,8 +6,7 @@ from pamqp import commands
 from pamqp import exceptions as pamqp_exceptions
 
 import aiorabbit
-from aiorabbit import client, exceptions, state
-
+from aiorabbit import client
 from . import testing
 
 
@@ -29,7 +27,6 @@ class ContextManagerTestCase(testing.AsyncTestCase):
             await c.confirm_select()
             with self.assertRaises(RuntimeError):
                 await c.confirm_select()
-            logging.getLogger(__name__).debug('Should close with swallowing the exception')
         self.assertEqual(c._state, client.STATE_CLOSED)
 
 

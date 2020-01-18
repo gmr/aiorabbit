@@ -1,7 +1,4 @@
-import asyncio
-
 from aiorabbit import exceptions, state
-
 from . import testing
 
 STATE_FOO = 0x10
