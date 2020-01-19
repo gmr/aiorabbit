@@ -20,7 +20,7 @@ class AsyncTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
-        self.timeout = int(os.environ.get('ASYNC_TIMEOUT', '3'))
+        self.timeout = int(os.environ.get('ASYNC_TIMEOUT', '10'))
         self.timeout_handle = self.loop.call_later(
             self.timeout, self.on_timeout)
 
@@ -43,6 +43,11 @@ class ClientTestCase(AsyncTestCase):
         super().setUp()
         self.rabbitmq_url = os.environ['RABBITMQ_URI']
         self.client = client.Client(self.rabbitmq_url, loop=self.loop)
+
+    def tearDown(self) -> None:
+        if not self.client.is_closed:
+            self.loop.run_until_complete(self.close())
+        super().tearDown()
 
     def assert_state(self, *state):
         self.assertIn(
