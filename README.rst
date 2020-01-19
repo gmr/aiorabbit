@@ -17,7 +17,7 @@ The following demonstrates an example of the intended behavior for the library:
 
 .. code-block:: python
 
-    import time
+    import datetime
     import uuid
 
     import aiorabbit
@@ -26,17 +26,16 @@ The following demonstrates an example of the intended behavior for the library:
 
 
     async def main():
-        client = await aiorabbit.connect(RABBITMQ_URL)
-        await client.confirm_select()
-
-        response = await client.publish(
-            'exchange', 'routing-key', 'message-body', app_id='example',
-            message_id=str(uuid.uuid4()), timestamp=int(time.time()),
-            mandatory=True)
-
-        if not response.ok:
-            print('Publishing failure: {!r} {!r}'.format(
-                response.error, response.message))
+        async with aiorabbit.connect(RABBITMQ_URL) as client:
+            await client.confirm_select()
+            if not await client.publish(
+                    'exchange',
+                    'routing-key',
+                    'message-body',
+                    app_id='example',
+                    message_id=str(uuid.uuid4()),
+                    timestamp=datetime.datetime.utcnow()):
+                print('Publishing failure')
 
     if __name__ == '__main__':
         asyncio.run(main())
