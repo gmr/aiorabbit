@@ -208,6 +208,8 @@ class PublishingTestCase(testing.ClientTestCase):
         channel = self.client._channel
         await self.client.publish(self.exchange, self.routing_key, self.body)
         await self.test_finished.wait()
+        await self.client._wait_on_state(client.STATE_CHANNEL_OPENOK_RECEIVED)
+
         self.assertEqual(self.client._channel, channel + 1)
 
     @testing.async_test
