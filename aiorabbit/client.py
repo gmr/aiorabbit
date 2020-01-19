@@ -11,7 +11,7 @@ import socket
 import typing
 from urllib import parse
 
-from pamqp import base, body, commands, frame, header, heartbeat
+from pamqp import body, commands, frame, header
 from pamqp import exceptions as pamqp_exceptions
 import yarl
 
@@ -20,16 +20,11 @@ from aiorabbit import (channel0,
                        DEFAULT_PRODUCT,
                        DEFAULT_URL,
                        exceptions,
+                       message,
                        protocol,
                        state)
 
 LOGGER = logging.getLogger(__name__)
-
-
-Frame = typing.Union[base.Frame,
-                     body.ContentBody,
-                     header.ContentHeader,
-                     heartbeat.Heartbeat]
 
 STATE_DISCONNECTED = 0x11
 STATE_CONNECTING = 0x12
@@ -37,67 +32,70 @@ STATE_CONNECTED = 0x13
 STATE_OPENED = 0x14
 STATE_UPDATE_SECRET_SENT = 0x15
 STATE_UPDATE_SECRETOK_RECEIVED = 0x16
-STATE_CHANNEL_OPEN_SENT = 0x17
-STATE_CHANNEL_OPENOK_RECEIVED = 0x18
-STATE_CHANNEL_CLOSE_RECEIVED = 0x19
-STATE_CHANNEL_CLOSE_SENT = 0x20
-STATE_CHANNEL_CLOSEOK_RECEIVED = 0x21
-STATE_CHANNEL_FLOW_RECEIVED = 0x22
-STATE_CHANNEL_FLOWOK_SENT = 0x23
-STATE_CONFIRM_SELECT_SENT = 0x24
-STATE_CONFIRM_SELECTOK_RECEIVED = 0x25
-STATE_EXCHANGE_BIND_SENT = 0x26
-STATE_EXCHANGE_BINDOK_RECEIVED = 0x27
-STATE_EXCHANGE_DECLARE_SENT = 0x28
-STATE_EXCHANGE_DECLAREOK_RECEIVED = 0x29
-STATE_EXCHANGE_DELETE_SENT = 0x30
-STATE_EXCHANGE_DELETEOK_RECEIVED = 0x31
-STATE_EXCHANGE_UNBIND_SENT = 0x32
-STATE_EXCHANGE_UNBINDOK_RECEIVED = 0x33
-STATE_QUEUE_BIND_SENT = 0x34
-STATE_QUEUE_BINDOK_RECEIVED = 0x35
-STATE_QUEUE_DECLARE_SENT = 0x36
-STATE_QUEUE_DECLAREOK_RECEIVED = 0x37
-STATE_QUEUE_DELETE_SENT = 0x38
-STATE_QUEUE_DELETEOK_RECEIVED = 0x39
-STATE_QUEUE_PURGE_SENT = 0x40
-STATE_QUEUE_PURGEOK_RECEIVED = 0x41
-STATE_QUEUE_UNBIND_SENT = 0x42
-STATE_QUEUE_UNBINDOK_RECEIVED = 0x43
-STATE_TX_SELECT_SENT = 0x44
-STATE_TX_SELECTOK_RECEIVED = 0x45
-STATE_TX_COMMIT_SENT = 0x46
-STATE_TX_COMMITOK_RECEIVED = 0x47
-STATE_TX_ROLLBACK_SENT = 0x48
-STATE_TX_ROLLBACKOK_RECEIVED = 0x49
-STATE_BASIC_ACK_RECEIVED = 0x50
-STATE_BASIC_ACK_SENT = 0x51
-STATE_BASIC_CANCEL_RECEIVED = 0x52
-STATE_BASIC_CANCEL_SENT = 0x53
-STATE_BASIC_CANCELOK_RECEIVED = 0x54
-STATE_BASIC_CANCELOK_SENT = 0x55
-STATE_BASIC_CONSUME_SENT = 0x56
-STATE_BASIC_CONSUMEOK_RECEIVED = 0x57
-STATE_BASIC_DELIVER_RECEIVED = 0x58
-STATE_CONTENT_HEADER_RECEIVED = 0x59
-STATE_CONTENT_BODY_RECEIVED = 0x60
-STATE_BASIC_GET_SENT = 0x61
-STATE_BASIC_GETEMPTY_RECEIVED = 0x62
-STATE_BASIC_GETOK_RECEIVED = 0x63
-STATE_BASIC_NACK_RECEIVED = 0x64
-STATE_BASIC_NACK_SENT = 0x65
-STATE_BASIC_PUBLISH_SENT = 0x66
-STATE_CONTENT_HEADER_SENT = 0x67
-STATE_CONTENT_BODY_SENT = 0x68
-STATE_QOS_SENT = 0x69
-STATE_QOSOK_RECEIVED = 0x70
-STATE_RECOVER_SENT = 0x71
-STATE_RECOVEROK_RECEIVED = 0x72
-STATE_BASIC_REJECT_RECEIVED = 0x73
-STATE_BASIC_REJECT_SENT = 0x74
-STATE_BASIC_RETURN_RECEIVED = 0x75
-STATE_CLOSING = 0x76
-STATE_CLOSED = 0x77
+STATE_OPENING_CHANNEL = 0x17
+STATE_CHANNEL_OPEN_SENT = 0x20
+STATE_CHANNEL_OPENOK_RECEIVED = 0x21
+STATE_CHANNEL_CLOSE_RECEIVED = 0x22
+STATE_CHANNEL_CLOSE_SENT = 0x23
+STATE_CHANNEL_CLOSEOK_RECEIVED = 0x24
+STATE_CHANNEL_CLOSEOK_SENT = 0x25
+STATE_CHANNEL_FLOW_RECEIVED = 0x26
+STATE_CHANNEL_FLOWOK_SENT = 0x27
+STATE_CONFIRM_SELECT_SENT = 0x30
+STATE_CONFIRM_SELECTOK_RECEIVED = 0x31
+STATE_EXCHANGE_BIND_SENT = 0x40
+STATE_EXCHANGE_BINDOK_RECEIVED = 0x41
+STATE_EXCHANGE_DECLARE_SENT = 0x42
+STATE_EXCHANGE_DECLAREOK_RECEIVED = 0x43
+STATE_EXCHANGE_DELETE_SENT = 0x44
+STATE_EXCHANGE_DELETEOK_RECEIVED = 0x45
+STATE_EXCHANGE_UNBIND_SENT = 0x46
+STATE_EXCHANGE_UNBINDOK_RECEIVED = 0x47
+STATE_QUEUE_BIND_SENT = 0x50
+STATE_QUEUE_BINDOK_RECEIVED = 0x51
+STATE_QUEUE_DECLARE_SENT = 0x52
+STATE_QUEUE_DECLAREOK_RECEIVED = 0x53
+STATE_QUEUE_DELETE_SENT = 0x54
+STATE_QUEUE_DELETEOK_RECEIVED = 0x55
+STATE_QUEUE_PURGE_SENT = 0x56
+STATE_QUEUE_PURGEOK_RECEIVED = 0x57
+STATE_QUEUE_UNBIND_SENT = 0x58
+STATE_QUEUE_UNBINDOK_RECEIVED = 0x59
+STATE_TX_SELECT_SENT = 0x60
+STATE_TX_SELECTOK_RECEIVED = 0x61
+STATE_TX_COMMIT_SENT = 0x62
+STATE_TX_COMMITOK_RECEIVED = 0x63
+STATE_TX_ROLLBACK_SENT = 0x64
+STATE_TX_ROLLBACKOK_RECEIVED = 0x65
+STATE_BASIC_ACK_RECEIVED = 0x70
+STATE_BASIC_ACK_SENT = 0x71
+STATE_BASIC_CANCEL_RECEIVED = 0x72
+STATE_BASIC_CANCEL_SENT = 0x73
+STATE_BASIC_CANCELOK_RECEIVED = 0x74
+STATE_BASIC_CANCELOK_SENT = 0x75
+STATE_BASIC_CONSUME_SENT = 0x76
+STATE_BASIC_CONSUMEOK_RECEIVED = 0x77
+STATE_BASIC_DELIVER_RECEIVED = 0x78
+STATE_CONTENT_HEADER_RECEIVED = 0x79
+STATE_CONTENT_BODY_RECEIVED = 0x80
+STATE_BASIC_GET_SENT = 0x81
+STATE_BASIC_GETEMPTY_RECEIVED = 0x82
+STATE_BASIC_GETOK_RECEIVED = 0x83
+STATE_BASIC_NACK_RECEIVED = 0x84
+STATE_BASIC_NACK_SENT = 0x85
+STATE_BASIC_PUBLISH_SENT = 0x86
+STATE_CONTENT_HEADER_SENT = 0x87
+STATE_CONTENT_BODY_SENT = 0x88
+STATE_QOS_SENT = 0x89
+STATE_QOSOK_RECEIVED = 0x90
+STATE_RECOVER_SENT = 0x91
+STATE_RECOVEROK_RECEIVED = 0x92
+STATE_BASIC_REJECT_RECEIVED = 0x93
+STATE_BASIC_REJECT_SENT = 0x94
+STATE_BASIC_RETURN_RECEIVED = 0x95
+STATE_MESSAGE_ASSEMBLED = 0x96
+STATE_CLOSING = 0x100
+STATE_CLOSED = 0x101
 
 _STATE_MAP = {
     state.STATE_UNINITIALIZED: 'Uninitialized',
@@ -108,11 +106,13 @@ _STATE_MAP = {
     STATE_OPENED: 'Opened',
     STATE_UPDATE_SECRET_SENT: 'Updating Secret',
     STATE_UPDATE_SECRETOK_RECEIVED: 'Secret Updated',
-    STATE_CHANNEL_OPEN_SENT: 'Opening Channel',
+    STATE_OPENING_CHANNEL: 'Opening Channel',
+    STATE_CHANNEL_OPEN_SENT: 'Channel Requested',
     STATE_CHANNEL_OPENOK_RECEIVED: 'Channel Open',
     STATE_CHANNEL_CLOSE_RECEIVED: 'Server Closed Channel',
     STATE_CHANNEL_CLOSE_SENT: 'Closing Channel',
     STATE_CHANNEL_CLOSEOK_RECEIVED: 'Channel Closed',
+    STATE_CHANNEL_CLOSEOK_SENT: 'Server closed channel',
     STATE_CHANNEL_FLOW_RECEIVED: 'Channel Flow Received',
     STATE_CHANNEL_FLOWOK_SENT: 'Channel FlowOk Sent',
     STATE_CONFIRM_SELECT_SENT: 'Enabling Publisher Confirmations',
@@ -167,6 +167,7 @@ _STATE_MAP = {
     STATE_BASIC_REJECT_RECEIVED: 'Server rejected Message',
     STATE_BASIC_REJECT_SENT: 'Sending Message rejection',
     STATE_BASIC_RETURN_RECEIVED: 'Server returned message',
+    STATE_MESSAGE_ASSEMBLED: 'Message assembled',
     STATE_CLOSING: 'Closing',
     STATE_CLOSED: 'Closed',
 }
@@ -189,14 +190,10 @@ _IDLE_STATE = [
     STATE_TX_SELECT_SENT,
     STATE_TX_COMMIT_SENT,
     STATE_TX_ROLLBACK_SENT,
-    STATE_BASIC_ACK_RECEIVED,
     STATE_BASIC_CONSUME_SENT,
     STATE_BASIC_DELIVER_RECEIVED,
     STATE_BASIC_GET_SENT,
-    STATE_BASIC_NACK_RECEIVED,
     STATE_BASIC_PUBLISH_SENT,
-    STATE_BASIC_REJECT_RECEIVED,
-    STATE_BASIC_RETURN_RECEIVED,
     STATE_QOS_SENT,
     STATE_RECOVER_SENT,
     STATE_CLOSING,
@@ -209,14 +206,16 @@ _STATE_TRANSITIONS = {
     STATE_DISCONNECTED: [STATE_CONNECTING],
     STATE_CONNECTING: [STATE_CONNECTED],
     STATE_CONNECTED: [STATE_OPENED],
-    STATE_OPENED: [STATE_CHANNEL_OPEN_SENT],
+    STATE_OPENED: [STATE_OPENING_CHANNEL],
+    STATE_OPENING_CHANNEL: [STATE_CHANNEL_OPEN_SENT],
     STATE_UPDATE_SECRET_SENT: [STATE_UPDATE_SECRETOK_RECEIVED],
     STATE_UPDATE_SECRETOK_RECEIVED: _IDLE_STATE,
     STATE_CHANNEL_OPEN_SENT: [STATE_CHANNEL_OPENOK_RECEIVED],
     STATE_CHANNEL_OPENOK_RECEIVED: _IDLE_STATE,
-    STATE_CHANNEL_CLOSE_RECEIVED: [STATE_CHANNEL_OPEN_SENT],
+    STATE_CHANNEL_CLOSE_RECEIVED: [STATE_CHANNEL_CLOSEOK_SENT],
     STATE_CHANNEL_CLOSE_SENT: [STATE_CHANNEL_CLOSEOK_RECEIVED],
-    STATE_CHANNEL_CLOSEOK_RECEIVED: [STATE_CHANNEL_OPEN_SENT],
+    STATE_CHANNEL_CLOSEOK_RECEIVED: [STATE_OPENING_CHANNEL, STATE_CLOSING],
+    STATE_CHANNEL_CLOSEOK_SENT: [STATE_OPENING_CHANNEL],
     STATE_CHANNEL_FLOW_RECEIVED: [STATE_CHANNEL_FLOWOK_SENT],
     STATE_CHANNEL_FLOWOK_SENT: _IDLE_STATE,
     STATE_CONFIRM_SELECT_SENT: [STATE_CONFIRM_SELECTOK_RECEIVED],
@@ -258,6 +257,7 @@ _STATE_TRANSITIONS = {
     STATE_BASIC_CONSUMEOK_RECEIVED: _IDLE_STATE,
     STATE_BASIC_DELIVER_RECEIVED: [STATE_CONTENT_HEADER_RECEIVED],
     STATE_CONTENT_HEADER_RECEIVED: [STATE_CONTENT_BODY_RECEIVED],
+    STATE_CONTENT_BODY_RECEIVED: [STATE_MESSAGE_ASSEMBLED],
     STATE_BASIC_GET_SENT: [
         STATE_BASIC_GETEMPTY_RECEIVED,
         STATE_BASIC_GETOK_RECEIVED],
@@ -267,7 +267,10 @@ _STATE_TRANSITIONS = {
     STATE_BASIC_NACK_SENT: _IDLE_STATE,
     STATE_BASIC_PUBLISH_SENT: [STATE_CONTENT_HEADER_SENT],
     STATE_CONTENT_HEADER_SENT: [STATE_CONTENT_BODY_SENT],
-    STATE_CONTENT_BODY_SENT: _IDLE_STATE,
+    STATE_CONTENT_BODY_SENT: _IDLE_STATE + [
+        STATE_BASIC_ACK_RECEIVED,
+        STATE_BASIC_NACK_RECEIVED,
+        STATE_BASIC_RETURN_RECEIVED],
     STATE_QOS_SENT: [STATE_QOSOK_RECEIVED],
     STATE_QOSOK_RECEIVED: _IDLE_STATE,
     STATE_RECOVER_SENT: [STATE_RECOVEROK_RECEIVED],
@@ -275,6 +278,10 @@ _STATE_TRANSITIONS = {
     STATE_BASIC_REJECT_RECEIVED: _IDLE_STATE,
     STATE_BASIC_REJECT_SENT: _IDLE_STATE,
     STATE_BASIC_RETURN_RECEIVED: [STATE_CONTENT_HEADER_RECEIVED],
+    STATE_MESSAGE_ASSEMBLED: _IDLE_STATE + [
+        STATE_BASIC_ACK_RECEIVED,
+        STATE_BASIC_NACK_RECEIVED
+    ],
     STATE_CLOSING: [STATE_CLOSED],
     STATE_CLOSED: [STATE_CONNECTING]
 }
@@ -293,9 +300,18 @@ class Client(state.StateManager):
                  loop: typing.Optional[asyncio.AbstractEventLoop] = None):
         LOGGER.info('Creating new client.Client')
         super().__init__(loop or asyncio.get_running_loop())
+        self._acks = set({})
         self._blocked = asyncio.Event()
         self._channel: int = 0
+        self._channel_open = asyncio.Event()
         self._connected = asyncio.Event()
+        self._delivery_tag = 0
+        self._message: typing.Optional[message.Message] = None
+        self._nacks = set({})
+        self._on_channel_close: typing.Optional[typing.Callable] = None
+        self._on_message_delivery: typing.Optional[typing.Callable] = None
+        self._on_message_return: typing.Optional[typing.Callable] = None
+        self._rejects = set({})
         self._transport: typing.Optional[asyncio.Transport] = None
         self._protocol: typing.Optional[asyncio.Protocol] = None
         self._publisher_confirms = False
@@ -321,6 +337,11 @@ class Client(state.StateManager):
             if self._state != STATE_CLOSED:
                 self._set_state(STATE_CLOSED)
             return
+        if self._state != state.STATE_EXCEPTION:
+            if self._channel_open.is_set():
+                self._write(commands.Channel.Close(200, 'Client Requested'))
+                self._set_state(STATE_CHANNEL_CLOSE_SENT)
+                await self._wait_on_state(STATE_CHANNEL_CLOSEOK_RECEIVED)
         self._set_state(STATE_CLOSING)
         await self._channel0.close()
         self._transport.close()
@@ -369,7 +390,7 @@ class Client(state.StateManager):
                       reply_to: typing.Optional[str] = None,
                       timestamp: typing.Optional[datetime.datetime] = None,
                       user_id: typing.Optional[str] = None) \
-            -> typing.Optional[bool]:
+            -> typing.Union[None, bool, typing.Tuple[bool, message.Message]]:
         """Publish a message to RabbitMQ
 
         `message_body` can either be :py:class:`str` or :py:class:`bytes`. If
@@ -419,6 +440,8 @@ class Client(state.StateManager):
             raise TypeError('content_type must be of type str')
         elif correlation_id and not isinstance(correlation_id, str):
             raise TypeError('correlation_id must be of type str')
+        elif delivery_mode and not isinstance(delivery_mode, int):
+            raise TypeError('delivery_mode must be of type int')
         elif delivery_mode and delivery_mode not in [1, 2]:
             raise ValueError('delivery_mode must be 1 or 2')
         elif expiration and not isinstance(expiration, str):
@@ -429,6 +452,8 @@ class Client(state.StateManager):
             raise TypeError('message_id must be of type str')
         elif message_type and not isinstance(message_type, str):
             raise TypeError('message_type must be of type str')
+        elif priority and not isinstance(priority, int):
+            raise TypeError('delivery_mode must be of type int')
         elif priority and (not isinstance(priority, int)
                            or not 0 < priority < 256):
             raise ValueError('priority must be of type int between 0 and 256')
@@ -441,6 +466,12 @@ class Client(state.StateManager):
 
         if isinstance(message_body, str):
             message_body = message_body.encode('utf-8')
+
+        self._delivery_tag += 1
+        delivery_tag = self._delivery_tag
+        LOGGER.debug('Publishing delivery tag %i to %r %r',
+                     delivery_tag, exchange, routing_key)
+
         self._write(commands.Basic.Publish(
             exchange=exchange, routing_key=routing_key, mandatory=mandatory,
             immediate=immediate))
@@ -466,25 +497,31 @@ class Client(state.StateManager):
         self._set_state(STATE_CONTENT_HEADER_SENT)
 
         # Calculate how many body frames are needed
-        pieces = int(math.ceil(body_size / self._max_frame_size))
-        for offset in range(0, pieces):  # Send the message
-            start = self._max_frame_size * offset
-            end = start + self._max_frame_size
+        frames = int(math.ceil(body_size / self._max_frame_size))
+        for offset in range(0, frames):  # Send the message
+            start = int(self._max_frame_size * offset)
+            end = int(start + self._max_frame_size)
             if end > body_size:
-                end = body_size
+                end = int(body_size)
             self._write(body.ContentBody(message_body[start:end]))
         self._set_state(STATE_CONTENT_BODY_SENT)
 
-        if self._publisher_confirms:
+        while self._publisher_confirms:
             result = await self._wait_on_state(
-                STATE_CLOSED,
-                STATE_CHANNEL_CLOSE_RECEIVED,
                 STATE_BASIC_ACK_RECEIVED,
                 STATE_BASIC_NACK_RECEIVED,
-                STATE_BASIC_REJECT_RECEIVED)
-            if result == STATE_BASIC_ACK_RECEIVED:
+                STATE_CHANNEL_CLOSE_RECEIVED)
+            if result == STATE_BASIC_ACK_RECEIVED \
+                    and delivery_tag in self._acks:
+                self._acks.remove(delivery_tag)
                 return True
-            return False
+            elif result == STATE_BASIC_NACK_RECEIVED \
+                    and delivery_tag in self._nacks:
+                self._nacks.remove(delivery_tag)
+                return False
+            elif result == STATE_CHANNEL_CLOSE_RECEIVED:
+                await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
+                return False
 
     @property
     def is_closed(self) -> bool:
@@ -493,6 +530,21 @@ class Client(state.StateManager):
                                state.STATE_EXCEPTION,
                                state.STATE_UNINITIALIZED] \
             and not self._transport
+
+    def register_channel_close_callback(
+            self, callback: typing.Callable) -> None:
+        LOGGER.debug('Registered channel close callback: %r', callback)
+        self._on_channel_close = callback
+
+    def register_message_delivery_callback(
+            self, callback: typing.Callable) -> None:
+        LOGGER.debug('Registered message delivery callback: %r', callback)
+        self._on_message_delivery = callback
+
+    def register_message_return_callback(
+            self, callback: typing.Callable) -> None:
+        LOGGER.debug('Registered message return callback: %r', callback)
+        self._on_message_return = callback
 
     @property
     def server_capabilities(self) -> dict:
@@ -529,6 +581,11 @@ class Client(state.StateManager):
             await self._channel0.open(self._transport)
             self._set_state(STATE_OPENED)
 
+    @property
+    def _connect_timeout(self) -> float:
+        temp = self._url.query.get('connection_timeout', '3.0')
+        return socket.getdefaulttimeout() if temp is None else float(temp)
+
     async def _on_connected(self) -> None:
         self._set_state(STATE_CONNECTED)
 
@@ -536,33 +593,89 @@ class Client(state.StateManager):
         LOGGER.debug('Disconnected [%r]', exc)
         self._set_state(STATE_CLOSED, exc)
 
-    async def _on_frame(self, channel: int, value: Frame) -> None:
+    async def _on_frame(self, channel: int, value: frame.FrameTypes) -> None:
         if channel == 0:
             try:
                 self._channel0.process(value)
             except (exceptions.AIORabbitException,
                     pamqp_exceptions.PAMQPException) as exc:
                 self._set_state(state.STATE_EXCEPTION, exc)
-        elif value.name == 'Channel.OpenOk':
+        elif isinstance(value, commands.Channel.OpenOk):
             self._set_state(STATE_CHANNEL_OPENOK_RECEIVED)
-        elif value.name == 'Confirm.SelectOk':
+        elif isinstance(value, commands.Channel.Close):
+            self._set_state(STATE_CHANNEL_CLOSE_RECEIVED)
+            self._on_channel_closed(value)
+            if self._on_channel_close:
+                self._loop.call_soon(
+                    self._on_channel_close, value.reply_code, value.reply_text)
+        elif isinstance(value, commands.Channel.CloseOk):
+            self._channel_open.clear()
+            self._set_state(STATE_CHANNEL_CLOSEOK_RECEIVED)
+        elif isinstance(value, commands.Confirm.SelectOk):
             self._set_state(STATE_CONFIRM_SELECTOK_RECEIVED)
+        elif isinstance(value, commands.Basic.Ack):
+            self._set_state(STATE_BASIC_ACK_RECEIVED)
+            LOGGER.debug('Received ack for delivery_tag %i',
+                         value.delivery_tag)
+            self._acks.add(value.delivery_tag)
+        elif isinstance(value, commands.Basic.Nack):
+            self._set_state(STATE_BASIC_NACK_RECEIVED)
+            LOGGER.debug('Received nack for delivery_tag %i',
+                         value.delivery_tag)
+            self._nacks.add(value.delivery_tag)
+        elif isinstance(value, commands.Basic.Reject):
+            self._set_state(STATE_BASIC_REJECT_RECEIVED)
+            LOGGER.debug('Received reject for delivery_tag %i',
+                         value.delivery_tag)
+            self._rejects.add(value.delivery_tag)
+        elif isinstance(value, commands.Basic.Return):
+            self._set_state(STATE_BASIC_RETURN_RECEIVED, sticky=True)
+            self._message = message.Message(value)
+        elif isinstance(value, header.ContentHeader):
+            self._set_state(STATE_CONTENT_HEADER_RECEIVED)
+            self._message.header = value
+        elif value.name == 'ContentBody':
+            self._set_state(STATE_CONTENT_BODY_RECEIVED)
+            self._message.body_frames.append(value)
+            if self._message.complete:
+                self._set_state(STATE_MESSAGE_ASSEMBLED)
+                if STATE_BASIC_RETURN_RECEIVED in self._sticky_state:
+                    self._on_basic_return(self._pop_message())
         else:
             self._set_state(state.STATE_EXCEPTION,
-                            RuntimeError('Main commands not supported yet'))
+                            RuntimeError('Unsupported AMQ method'))
+
+    def _on_basic_return(self, value: message.Message) -> None:
+        self._clear_sticky_state(STATE_BASIC_RETURN_RECEIVED)
+        if self._on_message_return:
+            self._on_message_return(value)
+
+    def _on_channel_closed(self, value: commands.Channel.Close) -> None:
+        LOGGER.info('Channel closed: (%i) %s',
+                    value.reply_code, value.reply_text)
+        self._channel_open.clear()
+        self._write(commands.Channel.CloseOk())
+        self._set_state(STATE_CHANNEL_CLOSEOK_SENT)
+        self._loop.call_soon(asyncio.ensure_future, self._open_channel())
 
     async def _open_channel(self) -> None:
+        LOGGER.debug('Opening channel')
+        self._set_state(STATE_OPENING_CHANNEL)
         self._channel += 1
         if self._channel > self._channel0.max_channels:
             self._channel = 1
         self._write(commands.Channel.Open())
         self._set_state(STATE_CHANNEL_OPEN_SENT)
         await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
+        self._channel_open.set()
+        LOGGER.debug('Channel open')
 
-    @property
-    def _connect_timeout(self) -> float:
-        temp = self._url.query.get('connection_timeout', '3.0')
-        return socket.getdefaulttimeout() if temp is None else float(temp)
+    def _pop_message(self) -> message.Message:
+        if not self._message:
+            raise RuntimeError('Missing message')
+        value = self._message
+        self._message = None
+        return value
 
     def _reset(self) -> None:
         LOGGER.debug('Resetting internal state')

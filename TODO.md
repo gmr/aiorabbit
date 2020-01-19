@@ -14,10 +14,10 @@ Supported AMQ Methods
 | Basic.Recover                  |            |
 | Basic.RecoverAsync             |    :-1:    |
 | Basic.Reject                   |            |
-| Basic.Return                   |            |
-| Channel.Close                  |            |
+| Basic.Return                   |    :+1:    |
+| Channel.Close                  |    :+1:    |
 | Channel.Flow                   |            |
-| Channel.Open                   |            |
+| Channel.Open                   |    :+1:    |
 | Confirm.Select                 |    :+1:    |
 | Connection.Blocked             |    :+1:    |
 | Connection.Close               |    :+1:    |
