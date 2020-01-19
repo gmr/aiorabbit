@@ -62,6 +62,10 @@ class TestCase(testing.AsyncTestCase):
         self.assert_state(STATE_FOO)
         self.obj.set_state(STATE_FOO)
 
+    def test_removing_bad_sticky_does_nothing(self):
+        self.assert_state(state.STATE_UNINITIALIZED)
+        self.obj._clear_sticky_state(STATE_FOO)
+
     @testing.async_test
     async def test_wait_on_state(self):
         self.loop.call_soon(self.obj.set_state, STATE_FOO)
