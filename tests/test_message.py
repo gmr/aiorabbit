@@ -4,7 +4,7 @@ import time
 import unittest
 import uuid
 
-from pamqp import body, constants, commands, header
+from pamqp import body, commands, constants, header
 
 from aiorabbit import message
 
@@ -56,7 +56,7 @@ class TestCase(unittest.TestCase):
             value = value[constants.FRAME_MAX_SIZE:]
 
     def get_method(self):
-        raise NotImplemented
+        raise NotImplementedError
 
     def compare_message(self):
         for attribute in [
@@ -139,4 +139,3 @@ class BasicReturnTestCase(TestCase):
         self.assertIsNone(self.message.message_count)
         self.assertIsNone(self.message.redelivered)
         self.compare_message()
-
