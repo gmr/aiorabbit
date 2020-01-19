@@ -50,6 +50,8 @@ jobs:
 
       - name: Run tests
         run: nosetests
+        env:
+          NOSE_LOGFORMAT: "%(levelname) -10s %(asctime)s %(name) -25s %(funcName) -20s: %(message)s"
 
       - name: Upload Coverage
         uses: codecov/codecov-action@v1.0.2

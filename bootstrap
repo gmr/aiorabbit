@@ -72,6 +72,7 @@ cat > build/test-environment<<EOF
 export RABBITMQ_HOST=${TEST_HOST}
 export RABBITMQ_PORT=${RABBITMQ_PORT}
 export RABBITMQ_URI=amqp://guest:guest@${TEST_HOST}:${RABBITMQ_PORT}/%2f
+export NOSE_LOGFORMAT="%(levelname) -10s %(asctime)s %(name) -25s %(funcName) -20s: %(message)s"
 EOF
 
 printf "\nBootstrap complete\n\nDon't forget to \". build/test-environment\"\n"
