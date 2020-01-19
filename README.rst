@@ -13,7 +13,7 @@ Project Goals
 
 Example Use
 -----------
-The following demonstrates an example of the intended behavior for the library:
+The following demonstrates an example of using the library to publish a message with publisher confirmations enabled:
 
 .. code-block:: python
 
