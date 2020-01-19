@@ -20,7 +20,7 @@ class AsyncTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
-        self.timeout = int(os.environ.get('ASYNC_TIMEOUT', '10'))
+        self.timeout = int(os.environ.get('ASYNC_TIMEOUT', '3'))
         self.timeout_handle = self.loop.call_later(
             self.timeout, self.on_timeout)
 
