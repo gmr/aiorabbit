@@ -27,6 +27,9 @@ class Test(state.StateManager):
     def set_state(self, value: int) -> None:
         self._set_state(value)
 
+    def set_exception(self, exc):
+        self._set_state(state.STATE_EXCEPTION, exc)
+
 
 class TestCase(testing.AsyncTestCase):
 
@@ -57,13 +60,20 @@ class TestCase(testing.AsyncTestCase):
         self.assert_state(state.STATE_UNINITIALIZED)
         self.obj.set_state(STATE_FOO)
         self.assert_state(STATE_FOO)
-        with self.assertRaises(exceptions.StateTransitionError):
-            self.obj.set_state(STATE_FOO)
+        self.obj.set_state(STATE_FOO)
 
     @testing.async_test
-    async def run_test(self):
+    async def test_wait_on_state(self):
         self.loop.call_soon(self.obj.set_state, STATE_FOO)
         await self.obj._wait_on_state(STATE_FOO)
         self.loop.call_soon(self.obj.set_state, STATE_BAR)
         await self.obj._wait_on_state(STATE_BAR)
         self.assert_state(STATE_BAR)
+
+    @testing.async_test
+    async def test_exception_while_waiting(self):
+        self.loop.call_soon(self.obj.set_state, STATE_FOO)
+        await self.obj._wait_on_state(STATE_FOO)
+        self.loop.call_soon(self.obj.set_exception, RuntimeError)
+        with self.assertRaises(RuntimeError):
+            await self.obj._wait_on_state(STATE_BAR)

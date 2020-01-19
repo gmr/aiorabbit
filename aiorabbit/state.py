@@ -6,6 +6,7 @@ State Manager
 import asyncio
 import inspect
 import logging
+import time
 import typing
 
 from aiorabbit import exceptions
@@ -65,9 +66,7 @@ class StateManager:
             self._state = STATE_EXCEPTION
         else:
             if value == self._state:
-                raise exceptions.StateTransitionError(
-                    'Attempted to reassign the same state: {!r}'.format(
-                        self.state))
+                pass
             elif value not in self.STATE_TRANSITIONS[self._state]:
                 raise exceptions.StateTransitionError(
                     'Invalid state transition from {!r} to {!r}'.format(
@@ -86,24 +85,26 @@ class StateManager:
 
     async def _wait_on_state(self, *args) -> None:
         """Wait on a specific state value to transition"""
+        wait_id = time.time()
+        self._waits[wait_id] = {}
         events, states = [], []
         for state in args:
             event = asyncio.Event()
-            states.append(self.STATE_MAP[state])
-            events.append((event, self.STATE_MAP[state]))
+            states.append(state)
+            events.append((event, state))
             self._waits[state] = event
-        self._logger.debug('Waiting on %s', ', '.join(states))
-        waiting = True
-        while waiting and not self._exception:
+        self._logger.debug(
+            'Waiter %i waiting on %s', wait_id, ', '.join(
+                [self.state_description(s) for s in states]))
+        while not self._exception:
             for event, state in events:
                 if event.is_set():
-                    self._logger.debug('Wait on %r has finished', state)
-                    waiting = False
-                    break
+                    self._logger.debug(
+                        'Waiter %i wait on %r (%i) has finished', wait_id,
+                        self.state_description(state), state)
+                    del self._waits[wait_id]
+                    return state
             await asyncio.sleep(0.001)
-        for state in args:
-            del self._waits[state]
-        if self._exception:
-            exc = self._exception
-            self._exception = None
-            raise exc
+        exc = self._exception
+        self._exception = None
+        raise exc
