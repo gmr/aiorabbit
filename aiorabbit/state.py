@@ -85,7 +85,7 @@ class StateManager:
 
     async def _wait_on_state(self, *args) -> None:
         """Wait on a specific state value to transition"""
-        wait_id = time.time()
+        wait_id = time.monotonic_ns()
         self._waits[wait_id] = {}
         events, states = [], []
         for state in args:
@@ -94,13 +94,13 @@ class StateManager:
             events.append((event, state))
             self._waits[state] = event
         self._logger.debug(
-            'Waiter %i waiting on %s', wait_id, ', '.join(
+            'Waiter %r waiting on %s', wait_id, ', '.join(
                 [self.state_description(s) for s in states]))
         while not self._exception:
             for event, state in events:
                 if event.is_set():
                     self._logger.debug(
-                        'Waiter %i wait on %r (%i) has finished', wait_id,
+                        'Waiter %r wait on %r (%i) has finished', wait_id,
                         self.state_description(state), state)
                     del self._waits[wait_id]
                     return state
