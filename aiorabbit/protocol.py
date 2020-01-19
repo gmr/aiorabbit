@@ -26,10 +26,10 @@ class AMQP(asyncio.Protocol):
 
     def connection_made(self, transport) -> None:
         self.transport = transport
-        self.loop.call_soon(asyncio.ensure_future, self.on_connected())
+        asyncio.ensure_future(self.on_connected())
 
     def connection_lost(self, exc: typing.Optional[Exception]) -> None:
-        self.loop.call_soon(asyncio.ensure_future, self.on_disconnected(exc))
+        asyncio.ensure_future(self.on_disconnected(exc))
 
     def data_received(self, data: bytes) -> None:
         self.buffer += data
