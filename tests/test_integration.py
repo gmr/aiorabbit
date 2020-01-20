@@ -1,9 +1,8 @@
 import asyncio
 import os
 from unittest import mock
-import uuid
 
-from pamqp import commands, constants
+from pamqp import commands
 from pamqp import exceptions as pamqp_exceptions
 
 import aiorabbit
