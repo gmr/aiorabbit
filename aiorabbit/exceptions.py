@@ -23,3 +23,8 @@ class StateTransitionError(AIORabbitException):
 
 class NotSupportedError(AIORabbitException):
     pass
+
+
+class InvalidRequestError(AIORabbitException):
+    """The request violates the AMQ specification"""
+    pass

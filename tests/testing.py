@@ -1,9 +1,12 @@
 import asyncio
 import functools
+import logging
 import os
 import unittest
 
 from aiorabbit import client
+
+LOGGER = logging.getLogger(__name__)
 
 
 def async_test(*func):
@@ -11,7 +14,9 @@ def async_test(*func):
         @functools.wraps(func[0])
         def wrapper(*args, **kwargs):
             loop = asyncio.get_event_loop()
+            LOGGER.debug('Starting test')
             loop.run_until_complete(func[0](*args, **kwargs))
+            LOGGER.debug('Test completed')
         return wrapper
 
 
@@ -46,6 +51,7 @@ class ClientTestCase(AsyncTestCase):
 
     def tearDown(self) -> None:
         if not self.client.is_closed:
+            LOGGER.debug('Closing on tearDown')
             self.loop.run_until_complete(self.close())
         super().tearDown()
 
@@ -54,10 +60,12 @@ class ClientTestCase(AsyncTestCase):
             self.client.state, [self.client.STATE_MAP[s] for s in state])
 
     async def connect(self):
+        LOGGER.debug('Client connecting')
         self.assert_state(client.STATE_DISCONNECTED, client.STATE_CLOSED)
         await self.client.connect()
         self.assert_state(client.STATE_CHANNEL_OPENOK_RECEIVED)
 
     async def close(self):
+        LOGGER.debug('Client closing')
         await self.client.close()
         self.assert_state(client.STATE_CLOSED)

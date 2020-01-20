@@ -10,6 +10,7 @@ Project Goals
 - To make use of new features and capabilities in Python 3.7+
 - To abstract away the AMQP channel and use it only as a protocol coordination mechanism inside the client
 - To provide built-in support for multiple brokers and automatic reconnection
+- To ensure correctness of API usage, including values passed to RabbitMQ in AMQ method calls
 
 Example Use
 -----------

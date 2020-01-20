@@ -7,6 +7,7 @@ import asyncio
 import datetime
 import logging
 import math
+import re
 import socket
 import typing
 from urllib import parse
@@ -286,6 +287,11 @@ _STATE_TRANSITIONS = {
     STATE_CLOSED: [STATE_CONNECTING]
 }
 
+Arguments = typing.Optional[typing.Dict[str, typing.Any]]
+"""AMQ Method Arguments"""
+
+NamePattern = re.compile(r'^[\w:.-]+$', flags=re.UNICODE)
+
 
 class Client(state.StateManager):
     """RabbitMQ Client"""
@@ -422,47 +428,48 @@ class Client(state.StateManager):
         :raises: ValueError
 
         """
-        if not isinstance(exchange, str):
-            raise TypeError('exchange must be of type str')
-        elif not isinstance(routing_key, str):
-            raise TypeError('routing_key must be of type str')
-        elif not isinstance(message_body, (bytes, str)):
+        self._validate_exchange_name('exchange', exchange)
+        self._validate_short_str('routing_key', routing_key)
+        if not isinstance(message_body, (bytes, str)):
             raise TypeError('message_body must be of types bytes or str')
-        elif mandatory is not None and not isinstance(mandatory, bool):
-            raise TypeError('mandatory must be of type bool')
-        elif immediate is not None and not isinstance(immediate, bool):
-            raise TypeError('immediate must be of type bool')
-        elif app_id and not isinstance(app_id, str):
-            raise TypeError('app_id must be of type str')
-        elif content_encoding and not isinstance(content_encoding, str):
-            raise TypeError('content_encoding must be of type str')
-        elif content_type and not isinstance(content_type, str):
-            raise TypeError('content_type must be of type str')
-        elif correlation_id and not isinstance(correlation_id, str):
-            raise TypeError('correlation_id must be of type str')
-        elif delivery_mode and not isinstance(delivery_mode, int):
-            raise TypeError('delivery_mode must be of type int')
-        elif delivery_mode and delivery_mode not in [1, 2]:
-            raise ValueError('delivery_mode must be 1 or 2')
-        elif expiration and not isinstance(expiration, str):
-            raise TypeError('expiration must be of type str')
-        elif headers and not isinstance(headers, dict):
-            raise TypeError('headers must be of type dict')
-        elif message_id and not isinstance(message_id, str):
-            raise TypeError('message_id must be of type str')
-        elif message_type and not isinstance(message_type, str):
-            raise TypeError('message_type must be of type str')
-        elif priority and not isinstance(priority, int):
-            raise TypeError('delivery_mode must be of type int')
-        elif priority and (not isinstance(priority, int)
-                           or not 0 < priority < 256):
-            raise ValueError('priority must be of type int between 0 and 256')
-        elif reply_to and not isinstance(reply_to, str):
-            raise TypeError('reply_to must be of type str')
-        elif timestamp and not isinstance(timestamp, datetime.datetime):
+        if mandatory is not None:
+            self._validate_bool('mandatory', mandatory)
+        if immediate is not None:
+            self._validate_bool('immediate', immediate)
+        if app_id is not None:
+            self._validate_short_str('app_id', app_id)
+        if content_encoding is not None:
+            self._validate_short_str('content_encoding', content_encoding)
+        if content_type is not None:
+            self._validate_short_str('content_type', content_type)
+        if correlation_id is not None:
+            self._validate_short_str('correlation_id', correlation_id)
+        if delivery_mode is not None:
+            if not isinstance(delivery_mode, int):
+                raise TypeError('delivery_mode must be of type int')
+            elif not 0 < delivery_mode < 3:
+                raise ValueError('delivery_mode must be 1 or 2')
+        if expiration is not None:
+            self._validate_short_str('expiration', expiration)
+        if headers is not None:
+            self._validate_field_table('headers', headers)
+        if message_id is not None:
+            self._validate_short_str('message_id', message_id)
+        if message_type is not None:
+            self._validate_short_str('message_type', message_type)
+        if priority is not None:
+            if not isinstance(priority, int):
+                raise TypeError('delivery_mode must be of type int')
+            elif not 0 < priority < 256:
+                raise ValueError('priority must be between 0 and 256')
+        if message_type:
+            self._validate_short_str('message_type', message_type)
+        if reply_to:
+            self._validate_short_str('reply_to', reply_to)
+        if timestamp and not isinstance(timestamp, datetime.datetime):
             raise TypeError('reply_to must be of type datetime.datetime')
-        elif user_id and not isinstance(user_id, str):
-            raise TypeError('user_id must be of type str')
+        if user_id:
+            self._validate_short_str('user_id', user_id)
 
         if isinstance(message_body, str):
             message_body = message_body.encode('utf-8')
@@ -527,6 +534,7 @@ class Client(state.StateManager):
     def is_closed(self) -> bool:
         """Returns `True` if the connection is closed"""
         return self._state in [STATE_CLOSED,
+                               STATE_DISCONNECTED,
                                state.STATE_EXCEPTION,
                                state.STATE_UNINITIALIZED] \
             and not self._transport
@@ -685,6 +693,35 @@ class Client(state.StateManager):
         self._protocol = None
         self._publisher_confirms = False
         self._transport = None
+
+    @staticmethod
+    def _validate_bool(name: str, value: typing.Any) -> None:
+        if not isinstance(value, bool):
+            raise TypeError('{} must be of type bool'.format(name))
+
+    def _validate_exchange_name(self, name: str, value: typing.Any) -> None:
+        if value == '':
+            return
+        self._validate_short_str(name, value)
+        if NamePattern.match(value) is None:
+            raise ValueError('name must only contain letters, digits, hyphen, '
+                             'underscore, period, or colon.')
+
+    @staticmethod
+    def _validate_field_table(name: str, value: typing.Any) -> None:
+        if not isinstance(value, dict):
+            raise TypeError('{} must be of type dict'.format(name))
+        elif not all(isinstance(k, str) and 0 < len(k) <= 256
+                     for k in value.keys()):
+            raise ValueError('{} keys must all be of type str and '
+                             'less than 256 characters'.format(name))
+
+    @staticmethod
+    def _validate_short_str(name: str, value: typing.Any) -> None:
+        if not isinstance(value, str):
+            raise TypeError('{} must be of type str'.format(name))
+        elif len(value) > 256:
+            raise ValueError('{} must not exceed 256 characters'.format(name))
 
     def _write(self, value: frame.FrameTypes) -> None:
         LOGGER.debug('Writing frame %r to channel %i', value, self._channel)
