@@ -221,23 +221,41 @@ _STATE_TRANSITIONS = {
     STATE_CHANNEL_FLOWOK_SENT: _IDLE_STATE,
     STATE_CONFIRM_SELECT_SENT: [STATE_CONFIRM_SELECTOK_RECEIVED],
     STATE_CONFIRM_SELECTOK_RECEIVED: _IDLE_STATE,
-    STATE_EXCHANGE_BIND_SENT: [STATE_EXCHANGE_BINDOK_RECEIVED],
+    STATE_EXCHANGE_BIND_SENT: [
+        STATE_CHANNEL_CLOSE_RECEIVED,
+        STATE_EXCHANGE_BINDOK_RECEIVED],
     STATE_EXCHANGE_BINDOK_RECEIVED: _IDLE_STATE,
-    STATE_EXCHANGE_DECLARE_SENT: [STATE_EXCHANGE_DECLAREOK_RECEIVED],
+    STATE_EXCHANGE_DECLARE_SENT: [
+        STATE_CHANNEL_CLOSE_RECEIVED,
+        STATE_EXCHANGE_DECLAREOK_RECEIVED],
     STATE_EXCHANGE_DECLAREOK_RECEIVED: _IDLE_STATE,
-    STATE_EXCHANGE_DELETE_SENT: [STATE_EXCHANGE_DELETEOK_RECEIVED],
+    STATE_EXCHANGE_DELETE_SENT: [
+        STATE_CHANNEL_CLOSE_RECEIVED,
+        STATE_EXCHANGE_DELETEOK_RECEIVED],
     STATE_EXCHANGE_DELETEOK_RECEIVED: _IDLE_STATE,
-    STATE_EXCHANGE_UNBIND_SENT: [STATE_EXCHANGE_UNBINDOK_RECEIVED],
+    STATE_EXCHANGE_UNBIND_SENT: [
+        STATE_CHANNEL_CLOSE_RECEIVED,
+        STATE_EXCHANGE_UNBINDOK_RECEIVED],
     STATE_EXCHANGE_UNBINDOK_RECEIVED: _IDLE_STATE,
-    STATE_QUEUE_BIND_SENT: [STATE_QUEUE_BINDOK_RECEIVED],
+    STATE_QUEUE_BIND_SENT: [
+        STATE_CHANNEL_CLOSE_RECEIVED,
+        STATE_QUEUE_BINDOK_RECEIVED],
     STATE_QUEUE_BINDOK_RECEIVED: _IDLE_STATE,
-    STATE_QUEUE_DECLARE_SENT: [STATE_QUEUE_DECLAREOK_RECEIVED],
+    STATE_QUEUE_DECLARE_SENT: [
+        STATE_CHANNEL_CLOSE_RECEIVED,
+        STATE_QUEUE_DECLAREOK_RECEIVED],
     STATE_QUEUE_DECLAREOK_RECEIVED: _IDLE_STATE,
-    STATE_QUEUE_DELETE_SENT: [STATE_QUEUE_DELETEOK_RECEIVED],
+    STATE_QUEUE_DELETE_SENT: [
+        STATE_CHANNEL_CLOSE_RECEIVED,
+        STATE_QUEUE_DELETEOK_RECEIVED],
     STATE_QUEUE_DELETEOK_RECEIVED: _IDLE_STATE,
-    STATE_QUEUE_PURGE_SENT: [STATE_QUEUE_PURGEOK_RECEIVED],
+    STATE_QUEUE_PURGE_SENT: [
+        STATE_CHANNEL_CLOSE_RECEIVED,
+        STATE_QUEUE_PURGEOK_RECEIVED],
     STATE_QUEUE_PURGEOK_RECEIVED: _IDLE_STATE,
-    STATE_QUEUE_UNBIND_SENT: [STATE_QUEUE_UNBINDOK_RECEIVED],
+    STATE_QUEUE_UNBIND_SENT: [
+        STATE_CHANNEL_CLOSE_RECEIVED,
+        STATE_QUEUE_UNBINDOK_RECEIVED],
     STATE_QUEUE_UNBINDOK_RECEIVED: _IDLE_STATE,
     STATE_TX_SELECT_SENT: [STATE_TX_SELECTOK_RECEIVED],
     STATE_TX_SELECTOK_RECEIVED: _IDLE_STATE + [
@@ -254,12 +272,15 @@ _STATE_TRANSITIONS = {
     STATE_BASIC_CANCEL_SENT: [STATE_BASIC_CANCELOK_RECEIVED],
     STATE_BASIC_CANCELOK_RECEIVED: _IDLE_STATE,
     STATE_BASIC_CANCELOK_SENT: _IDLE_STATE,
-    STATE_BASIC_CONSUME_SENT: [STATE_BASIC_CONSUMEOK_RECEIVED],
+    STATE_BASIC_CONSUME_SENT: [
+        STATE_CHANNEL_CLOSE_RECEIVED,
+        STATE_BASIC_CONSUMEOK_RECEIVED],
     STATE_BASIC_CONSUMEOK_RECEIVED: _IDLE_STATE,
     STATE_BASIC_DELIVER_RECEIVED: [STATE_CONTENT_HEADER_RECEIVED],
     STATE_CONTENT_HEADER_RECEIVED: [STATE_CONTENT_BODY_RECEIVED],
     STATE_CONTENT_BODY_RECEIVED: [STATE_MESSAGE_ASSEMBLED],
     STATE_BASIC_GET_SENT: [
+        STATE_CHANNEL_CLOSE_RECEIVED,
         STATE_BASIC_GETEMPTY_RECEIVED,
         STATE_BASIC_GETOK_RECEIVED],
     STATE_BASIC_GETEMPTY_RECEIVED: _IDLE_STATE,
@@ -272,7 +293,7 @@ _STATE_TRANSITIONS = {
         STATE_BASIC_ACK_RECEIVED,
         STATE_BASIC_NACK_RECEIVED,
         STATE_BASIC_RETURN_RECEIVED],
-    STATE_QOS_SENT: [STATE_QOSOK_RECEIVED],
+    STATE_QOS_SENT: [STATE_CHANNEL_CLOSE_RECEIVED, STATE_QOSOK_RECEIVED],
     STATE_QOSOK_RECEIVED: _IDLE_STATE,
     STATE_RECOVER_SENT: [STATE_RECOVEROK_RECEIVED],
     STATE_RECOVEROK_RECEIVED: _IDLE_STATE,
@@ -376,6 +397,67 @@ class Client(state.StateManager):
             self._set_state(STATE_CONFIRM_SELECT_SENT)
         await self._wait_on_state(STATE_CONFIRM_SELECTOK_RECEIVED)
         self._publisher_confirms = True
+
+    async def exchange_declare(self,
+                               name: str,
+                               exchange_type: str,
+                               passive: bool = False,
+                               durable: bool = False,
+                               auto_delete: bool = False,
+                               internal: bool = False,
+                               nowait: bool = False,
+                               arguments: Arguments = None) \
+            -> typing.Optional[bool]:
+        """Verify exchange exists, create if needed
+
+        This method creates an exchange if it does not already exist, and if
+        the exchange exists, verifies that it is of the correct and expected
+        class.
+
+        If ``passive`` is set, the method will return a bool indicating if the
+        exchange exists with the same name.
+
+        :param name: The exchange name to verify/create
+        :param exchange_type: The exchange type
+        :param passive: If set, the method will return ``True`` if the exchange
+            already exists with the same name.
+        :param durable: If set when creating a new exchange, the exchange will
+            be marked as durable. Durable exchanges remain active when a server
+            restarts.
+        :param auto_delete: If set, the exchange is deleted when all queues
+            have finished using it.
+        :param internal: If set, the exchange may not be used directly by
+            publishers, but only when bound to other exchanges.
+        :param nowait: If set, the server will not respond to the method.
+        :param arguments: A set of arguments for the declaration. The syntax
+            and semantics of these arguments depends on the server
+            implementation.
+        :raises: :exc:`TypeError`
+        :raises: :exc:`ValueError`
+        :raises: :exc:`~aiorabbit.exceptions.InvalidRequestError`
+
+        """
+        self._validate_exchange_name('name', name)
+        self._validate_short_str('exchange_type', exchange_type)
+        self._validate_bool('passive', passive)
+        self._validate_bool('durable', durable)
+        self._validate_bool('auto_delete', auto_delete)
+        self._validate_bool('internal', internal)
+        self._validate_bool('nowait', nowait)
+        if arguments:
+            self._validate_field_table('arguments', arguments)
+        elif passive and nowait:
+            raise exceptions.InvalidRequestError(
+                'Can not specify both passive and nowait')
+        self._write(commands.Exchange.Declare(
+            0, name, exchange_type, passive, durable, auto_delete, internal,
+            nowait, arguments))
+        self._set_state(STATE_EXCHANGE_DECLARE_SENT)
+        result = await self._wait_on_state(
+            STATE_EXCHANGE_DECLAREOK_RECEIVED, STATE_CHANNEL_CLOSE_RECEIVED)
+        if result == STATE_CHANNEL_CLOSE_RECEIVED:
+            await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
+        return result == STATE_EXCHANGE_DECLAREOK_RECEIVED if passive else None
 
     async def publish(self,
                       exchange: str = 'amq.direct',
@@ -639,6 +721,8 @@ class Client(state.StateManager):
         elif isinstance(value, commands.Basic.Return):
             self._set_state(STATE_BASIC_RETURN_RECEIVED, sticky=True)
             self._message = message.Message(value)
+        elif isinstance(value, commands.Exchange.DeclareOk):
+            self._set_state(STATE_EXCHANGE_DECLAREOK_RECEIVED)
         elif isinstance(value, header.ContentHeader):
             self._set_state(STATE_CONTENT_HEADER_RECEIVED)
             self._message.header = value

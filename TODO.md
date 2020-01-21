@@ -28,7 +28,7 @@ Supported AMQ Methods
 | Connection.Unblocked           |    :+1:    |
 | Connection.UpdateSecret        | :mag::mag: |
 | Exchange.Bind                  |            |
-| Exchange.Declare               |            |
+| Exchange.Declare               |    :+1:    |
 | Exchange.Delete                |            |
 | Exchange.Unbind                |            |
 | Queue.Bind                     |            |
