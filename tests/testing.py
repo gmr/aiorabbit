@@ -25,11 +25,13 @@ class AsyncTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
-        self.timeout = int(os.environ.get('ASYNC_TIMEOUT', '3'))
+        self.loop.set_debug(True)
+        self.timeout = int(os.environ.get('ASYNC_TIMEOUT', '5'))
         self.timeout_handle = self.loop.call_later(
             self.timeout, self.on_timeout)
 
     def tearDown(self):
+        LOGGER.debug('In AsyncTestCase.tearDown')
         if not self.timeout_handle.cancelled():
             self.timeout_handle.cancel()
         self.loop.run_until_complete(self.loop.shutdown_asyncgens())
@@ -50,6 +52,7 @@ class ClientTestCase(AsyncTestCase):
         self.client = client.Client(self.rabbitmq_url, loop=self.loop)
 
     def tearDown(self) -> None:
+        LOGGER.debug('In ClientTestCase.tearDown')
         if not self.client.is_closed:
             LOGGER.debug('Closing on tearDown')
             self.loop.run_until_complete(self.close())

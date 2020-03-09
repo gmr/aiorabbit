@@ -62,11 +62,16 @@ class StateManager:
         except KeyError:
             pass
 
+    def _clear_waits(self, wait_id: int) -> None:
+        for state in self._waits:
+            if wait_id in self._waits[state]:
+                del self._waits[state][wait_id]
+
     def _on_exception(self,
                       _loop: asyncio.AbstractEventLoop,
                       context: typing.Dict[str, typing.Any]) -> None:
         self._logger.debug('Exception on IOLoop: %r', context)
-        self._set_state(STATE_EXCEPTION, context['exception'])
+        self._set_state(STATE_EXCEPTION, context.get('exception'))
 
     def _set_state(self, value: int,
                    exc: typing.Optional[Exception] = None,
@@ -92,28 +97,28 @@ class StateManager:
                 if sticky:
                     self._sticky_state.add(value)
         if self._state in self._waits:
-            self._waits[self._state].set()
+            [self._loop.call_soon(event.set)
+             for event in self._waits[self._state].values()]
 
-    async def _wait_on_state(self, *args) -> None:
+    async def _wait_on_state(self, *args) -> int:
         """Wait on a specific state value to transition"""
-        wait_id = time.monotonic_ns()
-        self._waits[wait_id] = {}
-        events, states = [], []
+        wait_id, waits = time.monotonic_ns(), []
         for state in args:
-            event = asyncio.Event()
-            states.append(state)
-            events.append((event, state))
-            self._waits[state] = event
+            if state not in self._waits:
+                self._waits[state] = {}
+            self._waits[state][wait_id] = asyncio.Event()
+            waits.append((state, self._waits[state][wait_id]))
         self._logger.debug(
             'Waiter %r waiting on %s', wait_id, ', '.join(
-                [self.state_description(s) for s in states]))
+                ['({}) {}'.format(s, self.state_description(s[0]))
+                 for s in waits]))
         while not self._exception:
-            for event, state in events:
+            for state, event in waits:
                 if event.is_set():
                     self._logger.debug(
                         'Waiter %r wait on %r (%i) has finished', wait_id,
                         self.state_description(state), state)
-                    del self._waits[wait_id]
+                    self._clear_waits(wait_id)
                     return state
             await asyncio.sleep(0.001)
         exc = self._exception

@@ -12,7 +12,7 @@ import socket
 import typing
 from urllib import parse
 
-from pamqp import body, commands, frame, header
+from pamqp import body, commands, common, frame, header
 from pamqp import exceptions as pamqp_exceptions
 import yarl
 
@@ -110,10 +110,10 @@ _STATE_MAP = {
     STATE_OPENING_CHANNEL: 'Opening Channel',
     STATE_CHANNEL_OPEN_SENT: 'Channel Requested',
     STATE_CHANNEL_OPENOK_RECEIVED: 'Channel Open',
-    STATE_CHANNEL_CLOSE_RECEIVED: 'Server Closed Channel',
-    STATE_CHANNEL_CLOSE_SENT: 'Closing Channel',
-    STATE_CHANNEL_CLOSEOK_RECEIVED: 'Channel Closed',
-    STATE_CHANNEL_CLOSEOK_SENT: 'Server closed channel',
+    STATE_CHANNEL_CLOSE_RECEIVED: 'Channel Close Received',
+    STATE_CHANNEL_CLOSE_SENT: 'Channel Close Sent',
+    STATE_CHANNEL_CLOSEOK_RECEIVED: 'Channel CloseOk Received',
+    STATE_CHANNEL_CLOSEOK_SENT: 'Channel CloseOk Sent',
     STATE_CHANNEL_FLOW_RECEIVED: 'Channel Flow Received',
     STATE_CHANNEL_FLOWOK_SENT: 'Channel FlowOk Sent',
     STATE_CONFIRM_SELECT_SENT: 'Enabling Publisher Confirmations',
@@ -206,7 +206,7 @@ _STATE_TRANSITIONS = {
     state.STATE_EXCEPTION: [STATE_CLOSING, STATE_CLOSED],
     STATE_DISCONNECTED: [STATE_CONNECTING],
     STATE_CONNECTING: [STATE_CONNECTED, STATE_CLOSED],
-    STATE_CONNECTED: [STATE_OPENED],
+    STATE_CONNECTED: [STATE_OPENED, STATE_CLOSED],
     STATE_OPENED: [STATE_OPENING_CHANNEL],
     STATE_OPENING_CHANNEL: [STATE_CHANNEL_OPEN_SENT],
     STATE_UPDATE_SECRET_SENT: [STATE_UPDATE_SECRETOK_RECEIVED],
@@ -384,19 +384,111 @@ class Client(state.StateManager):
         """
         LOGGER.debug('Enabling confirm select')
         if not self.server_capabilities.get('publisher_confirms'):
-            self._set_state(
-                state.STATE_EXCEPTION,
-                exceptions.NotSupportedError(
-                    'Server does not support publisher confirmations'))
+            raise exceptions.NotSupportedError(
+                'Server does not support publisher confirmations')
         elif self._publisher_confirms:
-            self._set_state(
-                state.STATE_EXCEPTION,
-                RuntimeError('Publisher confirmations are already enabled'))
+            raise RuntimeError('Publisher confirmations are already enabled')
         else:
             self._write(commands.Confirm.Select())
             self._set_state(STATE_CONFIRM_SELECT_SENT)
-        await self._wait_on_state(STATE_CONFIRM_SELECTOK_RECEIVED)
-        self._publisher_confirms = True
+            await self._wait_on_state(STATE_CONFIRM_SELECTOK_RECEIVED)
+            self._publisher_confirms = True
+
+    async def exchange_bind(self,
+                            destination: str = '',
+                            source: str = '',
+                            routing_key: str = '',
+                            arguments: typing.Optional[
+                                typing.Dict[str, common.FieldValue]
+                            ] = None) -> None:
+        """Bind exchange to an exchange.
+
+        :param destination: exchange name
+        :param source: exchange name
+        :param routing_key: Message routing key
+        :param arguments: Arguments for binding
+        :raises: TypeError
+        :raises: ValueError
+        :raises: `aiorabbit.exceptions.ExchangeNotFoundError`
+
+        """
+        if not isinstance(destination, str):
+            raise TypeError('destination must be of type str')
+        elif not isinstance(source, str):
+            raise TypeError('source must be of type str')
+        elif not isinstance(routing_key, str):
+            raise TypeError('routing_key must be of type str')
+        elif arguments and not isinstance(arguments, dict):
+            raise TypeError('arguments must be of type dict')
+        self._write(commands.Exchange.Bind(
+            destination=destination, source=source, routing_key=routing_key,
+            arguments=arguments))
+        self._set_state(STATE_EXCHANGE_BIND_SENT)
+        result = await self._wait_on_state(
+            STATE_CHANNEL_CLOSE_RECEIVED,
+            STATE_EXCHANGE_BINDOK_RECEIVED)
+        LOGGER.debug('Post wos == %r (%s) %s', result, self._state, self.state)
+        if result == STATE_CHANNEL_CLOSE_RECEIVED:
+            await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
+            LOGGER.debug('Here')
+            raise exceptions.ExchangeNotFoundError()
+
+    async def exchange_declare(self,
+                               exchange: str = '',
+                               exchange_type: str = 'direct',
+                               passive: bool = False,
+                               durable: bool = False,
+                               auto_delete: bool = False,
+                               internal: bool = False,
+                               arguments: typing.Optional[
+                                   typing.Dict[str, common.FieldValue]
+                               ] = None) -> None:
+        """Verify exchange exists, create if needed
+
+        This method creates an exchange if it does not already exist, and if
+        the exchange exists, verifies that it is of the correct and expected
+        class.
+
+        :param exchange: exchange name
+        :param exchange_type: Exchange type
+        :param passive: Do not create exchange
+        :param durable: Request a durable exchange
+        :param auto_delete: Auto-delete when unused
+        :param internal: Create internal exchange
+        :param arguments: Arguments for declaration
+        :raises: TypeError
+        :raises: ValueError
+
+        """
+        if not isinstance(exchange, str):
+            raise TypeError('exchange must be of type str')
+        elif not isinstance(exchange_type, str):
+            raise TypeError('exchange_type must be of type str')
+        elif not isinstance(passive, bool):
+            raise TypeError('passive must be of type bool')
+        elif not isinstance(auto_delete, bool):
+            raise TypeError('auto_delete must be of type bool')
+        elif not isinstance(internal, bool):
+            raise TypeError('internal must be of type bool')
+        elif arguments and not isinstance(arguments, dict):
+            raise TypeError('arguments must be of type dict')
+        self._write(commands.Exchange.Declare(
+            exchange=exchange, exchange_type=exchange_type, passive=passive,
+            durable=durable, auto_delete=auto_delete, internal=internal,
+            arguments=arguments))
+        self._set_state(STATE_EXCHANGE_DECLARE_SENT)
+        try:
+            result = await self._wait_on_state(
+                STATE_CHANNEL_CLOSE_RECEIVED,
+                STATE_EXCHANGE_DECLAREOK_RECEIVED)
+        except pamqp_exceptions.AMQPCommandInvalid as exc:
+            LOGGER.debug('Should be reconnected here %r', exc)
+            raise exceptions.CommandInvalidError(str(exc))
+        else:
+            LOGGER.debug('After _wait_on_state')
+            if result == STATE_CHANNEL_CLOSE_RECEIVED:
+                await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
+                raise self.exception
 
     async def exchange_declare(self,
                                name: str,
@@ -680,8 +772,7 @@ class Client(state.StateManager):
         self._set_state(STATE_CONNECTED)
 
     async def _on_disconnected(self, exc: Exception) -> None:
-        LOGGER.debug('Disconnected [%r]', exc)
-        self._set_state(STATE_CLOSED, exc)
+        LOGGER.debug('Disconnected [%r] (%i) %s', exc, self._state, self.state)
 
     async def _on_frame(self, channel: int, value: frame.FrameTypes) -> None:
         if channel == 0:
@@ -733,6 +824,14 @@ class Client(state.StateManager):
                 self._set_state(STATE_MESSAGE_ASSEMBLED)
                 if STATE_BASIC_RETURN_RECEIVED in self._sticky_state:
                     self._on_basic_return(self._pop_message())
+        elif isinstance(value, commands.Exchange.BindOk):
+            self._set_state(STATE_EXCHANGE_BINDOK_RECEIVED)
+        elif isinstance(value, commands.Exchange.DeclareOk):
+            self._set_state(STATE_EXCHANGE_DECLAREOK_RECEIVED)
+        elif isinstance(value, commands.Exchange.DeleteOk):
+            self._set_state(STATE_EXCHANGE_DELETEOK_RECEIVED)
+        elif isinstance(value, commands.Exchange.UnbindOk):
+            self._set_state(STATE_EXCHANGE_UNBINDOK_RECEIVED)
         else:
             self._set_state(state.STATE_EXCEPTION,
                             RuntimeError('Unsupported AMQ method'))
@@ -769,6 +868,17 @@ class Client(state.StateManager):
         self._message = None
         return value
 
+    async def _reconnect(self) -> None:
+        publisher_confirms = self._publisher_confirms
+        self._reset()
+        LOGGER.debug('Pre-connect state: %r', self.state)
+        await self._connect()
+        await self._open_channel()
+        LOGGER.debug('Post open state: %r', self.state)
+        if publisher_confirms:
+            await self.confirm_select()
+        LOGGER.debug('State: %r', self.state)
+
     def _reset(self) -> None:
         LOGGER.debug('Resetting internal state')
         self._blocked.clear()
@@ -776,6 +886,7 @@ class Client(state.StateManager):
         self._connected.clear()
         self._protocol = None
         self._publisher_confirms = False
+        self._state = STATE_CLOSED
         self._transport = None
 
     @staticmethod
@@ -810,3 +921,18 @@ class Client(state.StateManager):
     def _write(self, value: frame.FrameTypes) -> None:
         LOGGER.debug('Writing frame %r to channel %i', value, self._channel)
         self._transport.write(frame.marshal(value, self._channel))
+
+    async def _wait_on_state(self, *args) -> int:
+        try:
+            result = await super()._wait_on_state(*args)
+        except pamqp_exceptions.AMQPError as exc:
+            LOGGER.warning('Exception raised while waiting: %s (%i) %s',
+                           exc, self._state, self.state)
+            #if not self.is_closed:
+            #    await super()._wait_on_state(STATE_CLOSED)
+            #    LOGGER.debug('is_closed')
+            #await self._reconnect()
+            #raise exc
+        else:
+            self._logger.debug('Post state._wait_on_state: %r', result)
+            return result
