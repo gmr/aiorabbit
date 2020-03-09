@@ -28,3 +28,11 @@ class NotSupportedError(AIORabbitException):
 class InvalidRequestError(AIORabbitException):
     """The request violates the AMQ specification"""
     pass
+
+
+class ExchangeNotFoundError(AIORabbitException):
+    pass
+
+
+class CommandInvalidError(AIORabbitException):
+    pass
