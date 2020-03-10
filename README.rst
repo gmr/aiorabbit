@@ -6,15 +6,19 @@ aiorabbit is an opinionated AsyncIO RabbitMQ client for Python 3.
 
 Project Goals
 -------------
-- To create a simple, robust RabbitMQ client library for AsyncIO development in Python 3
-- To make use of new features and capabilities in Python 3.7+
+- To create a simple, robust RabbitMQ client library for AsyncIO development in Python 3.
+- To make use of new features and capabilities in Python 3.7+.
 - Remove some complexity in using an AMQP client by:
-   - Abstracting away the AMQP channel and use it only as a protocol coordination mechanism inside the client
-   - Remove the `nowait` keyword to ensure a single round-trip pattern of behavior for client usage
-- To automatically reconnect when a connection is closed due to an AMQP exception/error
-- To automatically create a new channel when the channel is closed due to an AMQP exception/error
-- To provide built-in support for multiple brokers and automatic reconnection
-- To ensure correctness of API usage, including values passed to RabbitMQ in AMQ method calls
+   - Abstracting away the AMQP channel and use it only as a protocol coordination mechanism inside the client.
+   - Remove the `nowait` keyword to ensure a single round-trip pattern of behavior for client usage.
+- To automatically reconnect when a connection is closed due to an AMQP exception/error.
+
+  *When such a behavior is encountered, the exception is raised, but the client continues to operate if the user catches and logs the error.*
+- To automatically create a new channel when the channel is closed due to an AMQP exception/error.
+
+  *When such a behavior is encountered, the exception is raised, but the client continues to operate if the user catches and logs the error.*
+- To provide built-in support for multiple brokers.
+- To ensure correctness of API usage, including values passed to RabbitMQ in AMQ method calls.
 
 Example Use
 -----------
