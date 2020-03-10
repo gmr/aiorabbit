@@ -7,11 +7,9 @@ import contextlib
 import logging
 import typing
 
-version = '0.1.0a1'
-
-DEFAULT_LOCALE = 'en-US'
-DEFAULT_PRODUCT = 'aiorabbit'
-DEFAULT_URL = 'amqp://guest:guest@localhost:5672/%2f'
+from aiorabbit import client, exceptions
+from aiorabbit.__version__ import version
+from aiorabbit.client import DEFAULT_LOCALE, DEFAULT_PRODUCT, DEFAULT_URL
 
 LOGGER = logging.getLogger('aiorabbit')
 
@@ -30,8 +28,6 @@ async def connect(url: str = DEFAULT_URL,
     :param loop: Optional asyncio Loop to use
 
     """
-    from aiorabbit import client
-
     rabbitmq = client.Client(url, locale, product, loop)
     await rabbitmq.connect()
     try:
@@ -40,8 +36,6 @@ async def connect(url: str = DEFAULT_URL,
         if not rabbitmq.is_closed:
             LOGGER.debug('Closing the client from context manager')
             await rabbitmq.close()
-        del client
-
 
 __all__ = [
     'client',

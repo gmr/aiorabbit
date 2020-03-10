@@ -1,23 +1,22 @@
 aiorabbit
 =========
-aiorabbit is an opinionated AsyncIO RabbitMQ client for Python 3.
+aiorabbit is an opinionated AsyncIO RabbitMQ client for `Python 3 <https://www.python.org/>`_ (3.7+).
 
 |Version| |Status| |Coverage| |License|
 
 Project Goals
 -------------
-- To create a simple, robust RabbitMQ client library for AsyncIO development in Python 3.
+- To create a simple, robust `RabbitMQ <https://rabbitmq.com>`_ client library for `AsyncIO <https://docs.python.org/3/library/asyncio.html>`_ development in Python 3.
 - To make use of new features and capabilities in Python 3.7+.
-- Remove some complexity in using an AMQP client by:
+- Remove some complexity in using an `AMQP <https://en.wikipedia.org/wiki/Advanced_Message_Queuing_Protocol>`_ client by:
    - Abstracting away the AMQP channel and use it only as a protocol coordination mechanism inside the client.
-   - Remove the `nowait` keyword to ensure a single round-trip pattern of behavior for client usage.
+   - Remove the `nowait <https://www.rabbitmq.com/amqp-0-9-1-reference.html#domain.no-wait>`_ keyword to ensure a single round-trip pattern of behavior for client usage.
 - To automatically reconnect when a connection is closed due to an AMQP exception/error.
 
   *When such a behavior is encountered, the exception is raised, but the client continues to operate if the user catches and logs the error.*
 - To automatically create a new channel when the channel is closed due to an AMQP exception/error.
 
   *When such a behavior is encountered, the exception is raised, but the client continues to operate if the user catches and logs the error.*
-- To provide built-in support for multiple brokers.
 - To ensure correctness of API usage, including values passed to RabbitMQ in AMQ method calls.
 
 Example Use
@@ -26,6 +25,7 @@ The following demonstrates an example of using the library to publish a message 
 
 .. code-block:: python
 
+    import asyncio
     import datetime
     import uuid
 
@@ -47,7 +47,7 @@ The following demonstrates an example of using the library to publish a message 
                 print('Publishing failure')
 
     if __name__ == '__main__':
-        asyncio.run(main())
+        asyncio.get_event_loop().run_until_complete(main())
 
 Documentation
 -------------

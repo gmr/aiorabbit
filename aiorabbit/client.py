@@ -6,6 +6,7 @@ AsyncIO RabbitMQ Client
 import asyncio
 import dataclasses
 import datetime
+import decimal
 import logging
 import math
 import re
@@ -13,20 +14,30 @@ import socket
 import typing
 from urllib import parse
 
-from pamqp import body, commands, common, frame, header
+from pamqp import body, commands, frame, header
 from pamqp import exceptions as pamqp_exceptions
 import yarl
 
-from aiorabbit import (channel0,
-                       DEFAULT_LOCALE,
-                       DEFAULT_PRODUCT,
-                       DEFAULT_URL,
-                       exceptions,
-                       message,
-                       protocol,
-                       state)
+from aiorabbit import channel0, exceptions, message, protocol, state
 
 LOGGER = logging.getLogger(__name__)
+
+DEFAULT_LOCALE = 'en-US'
+DEFAULT_PRODUCT = 'aiorabbit'
+DEFAULT_URL = 'amqp://guest:guest@localhost:5672/%2f'
+
+FieldArray = typing.List['FieldValue']  # type: ignore
+FieldTable = typing.Dict[str, 'FieldValue']  # type: ignore
+FieldValue = typing.Union[bool,  # type: ignore
+                          bytearray,
+                          decimal.Decimal,
+                          FieldArray,
+                          FieldTable,
+                          float,
+                          int,
+                          None,
+                          str,
+                          datetime.datetime]
 
 STATE_DISCONNECTED = 0x11
 STATE_CONNECTING = 0x12
@@ -360,6 +371,7 @@ class Client(state.StateManager):
         await self._open_channel()
 
     async def close(self) -> None:
+        """Close the client connection to the server"""
         LOGGER.debug('Invoked Client.close() while is_closed (%r, %r)',
                      self.is_closed, self._channel0)
         if self.is_closed or not self._channel0 or not self._transport:
@@ -397,18 +409,18 @@ class Client(state.StateManager):
                             destination: str = '',
                             source: str = '',
                             routing_key: str = '',
-                            arguments: typing.Optional[
-                                typing.Dict[str, common.FieldValue]
-                            ] = None) -> None:
+                            arguments: typing.Optional[FieldTable] = None) \
+            -> None:
         """Bind exchange to an exchange.
 
         :param destination: exchange name
         :param source: exchange name
         :param routing_key: Message routing key
         :param arguments: Arguments for binding
-        :raises: TypeError
-        :raises: ValueError
-        :raises: `aiorabbit.exceptions.ExchangeNotFoundError`
+        :raises: :exc:`TypeError`
+        :raises: :exc:`ValueError`
+        :raises: :exc:`~aiorabbit.exceptions.CommandInvalidError`
+        :raises: :exc:`~aiorabbit.exceptions.ExchangeNotFoundError`
 
         """
         if not isinstance(destination, str):
@@ -426,10 +438,8 @@ class Client(state.StateManager):
         result = await self._wait_on_state(
             STATE_CHANNEL_CLOSE_RECEIVED,
             STATE_EXCHANGE_BINDOK_RECEIVED)
-        LOGGER.debug('Post wos == %r (%s) %s', result, self._state, self.state)
         if result == STATE_CHANNEL_CLOSE_RECEIVED:
             await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
-            LOGGER.debug('Here')
             raise exceptions.ExchangeNotFoundError()
 
     async def exchange_declare(self,
@@ -439,9 +449,8 @@ class Client(state.StateManager):
                                durable: bool = False,
                                auto_delete: bool = False,
                                internal: bool = False,
-                               arguments: typing.Optional[
-                                   typing.Dict[str, common.FieldValue]
-                               ] = None) -> bool:
+                               arguments: typing.Optional[FieldTable] = None) \
+            -> bool:
         """Verify exchange exists, create if needed
 
         This method creates an exchange if it does not already exist, and if
@@ -455,8 +464,9 @@ class Client(state.StateManager):
         :param auto_delete: Auto-delete when unused
         :param internal: Create internal exchange
         :param arguments: Arguments for declaration
-        :raises: TypeError
-        :raises: ValueError
+        :raises: :exc:`TypeError`
+        :raises: :exc:`ValueError`
+        :raises: :exc:`~aiorabbit.exceptions.CommandInvalidError`
 
         """
         if not isinstance(exchange, str):
@@ -500,7 +510,7 @@ class Client(state.StateManager):
                       correlation_id: typing.Optional[str] = None,
                       delivery_mode: typing.Optional[int] = None,
                       expiration: typing.Optional[str] = None,
-                      headers: typing.Optional[dict] = None,
+                      headers: typing.Optional[FieldTable] = None,
                       message_id: typing.Optional[str] = None,
                       message_type: typing.Optional[str] = None,
                       priority: typing.Optional[int] = None,
@@ -535,8 +545,8 @@ class Client(state.StateManager):
         :param reply_to: Address to reply to
         :param timestamp: Message timestamp
         :param user_id: Creating user id
-        :raises: TypeError
-        :raises: ValueError
+        :raises: :exc:`TypeError`
+        :raises: :exc:`ValueError`
 
         """
         self._validate_exchange_name('exchange', exchange)
@@ -643,7 +653,7 @@ class Client(state.StateManager):
 
     @property
     def is_closed(self) -> bool:
-        """Returns `True` if the connection is closed"""
+        """Indicates if the connection is closed"""
         return self._state in [STATE_CLOSED,
                                STATE_DISCONNECTED,
                                state.STATE_EXCEPTION,
@@ -652,25 +662,83 @@ class Client(state.StateManager):
 
     def register_channel_close_callback(
             self, callback: typing.Callable) -> None:
+        """Register a callback that is invoked when RabbitMQ closes a channel.
+
+        .. note:: This is provided for information purposes only. A connected
+                 :class:`~aiorabbit.client.Client` will automatically create a
+                 new channel when the current channel is closed.
+
+        """
+
         LOGGER.debug('Registered channel close callback: %r', callback)
         self._on_channel_close = callback
 
     def register_message_delivery_callback(
             self, callback: typing.Callable) -> None:
+        """Register a callback that is invoked when RabbitMQ delivers a message
+        that is to be consumed.
+
+        """
         LOGGER.debug('Registered message delivery callback: %r', callback)
         self._on_message_delivery = callback
 
     def register_message_return_callback(
             self, callback: typing.Callable) -> None:
+        """Register a callback that is invoked when RabbitMQ returns a
+        published message.
+
+        """
         LOGGER.debug('Registered message return callback: %r', callback)
         self._on_message_return = callback
 
     @property
-    def server_capabilities(self) -> dict:
-        return self._channel0.properties['capabilities']
+    def server_capabilities(self) -> list:
+        """Contains the capabilities of the currently connected
+        RabbitMQ Server.
+
+        .. code-block:: python
+           :caption: Example
+
+           ['authentication_failure_close',
+            'basic.nack',
+            'connection.blocked',
+            'consumer_cancel_notify',
+            'consumer_priorities',
+            'direct_reply_to',
+            'exchange_exchange_bindings',
+            'per_consumer_qos',
+            'publisher_confirms']
+
+        """
+        return [key for key, value in
+                self._channel0.properties['capabilities'].items() if value]
 
     @property
     def server_properties(self) -> dict:
+        """Contains the negotiated properties for the currently connected
+        RabbitMQ Server.
+
+        .. code-block:: python
+           :caption: Example
+
+           {'capabilities': {'authentication_failure_close': True,
+                             'basic.nack': True,
+                             'connection.blocked': True,
+                             'consumer_cancel_notify': True,
+                             'consumer_priorities': True,
+                             'direct_reply_to': True,
+                             'exchange_exchange_bindings': True,
+                             'per_consumer_qos': True,
+                             'publisher_confirms': True},
+            'cluster_name': 'rabbit@b6a4a6555767',
+            'copyright': 'Copyright (c) 2007-2019 Pivotal Software, Inc.',
+            'information': 'Licensed under the MPL 1.1. '
+                           'Website: https://rabbitmq.com',
+            'platform': 'Erlang/OTP 22.2.8',
+            'product': 'RabbitMQ',
+            'version': '3.8.2'}
+
+        """
         return self._channel0.properties
 
     async def _close(self) -> None:

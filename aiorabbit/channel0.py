@@ -13,7 +13,8 @@ import typing
 from pamqp import commands, constants, frame, header, heartbeat
 from pamqp import exceptions as pamqp_exceptions
 
-from aiorabbit import exceptions, state, version
+from aiorabbit import exceptions, state
+from aiorabbit.__version__ import version
 
 LOGGER = logging.getLogger(__name__)
 

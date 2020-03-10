@@ -17,4 +17,5 @@ extensions = [
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
-intersphinx_mapping = {'python': ('https://docs.python.org/3', None)}
+intersphinx_mapping = {'python': ('https://docs.python.org/3', None),
+                       'pamqp': ('https://pamqp.readthedocs.io/en/latest/', None)}
