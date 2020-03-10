@@ -697,7 +697,7 @@ class Client(state.StateManager):
         RabbitMQ Server.
 
         .. code-block:: python
-           :caption: Example
+           :name: Example Value
 
            ['authentication_failure_close',
             'basic.nack',
@@ -719,7 +719,7 @@ class Client(state.StateManager):
         RabbitMQ Server.
 
         .. code-block:: python
-           :caption: Example
+           :name: Example Value
 
            {'capabilities': {'authentication_failure_close': True,
                              'basic.nack': True,

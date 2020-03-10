@@ -24,7 +24,7 @@ Installation
 ------------
 aiorabbit is available via the `Python Package Index <https://pypi.org>`_.
 
-.. code-block::
+.. code::
 
     pip3 install aiorabbit
 
