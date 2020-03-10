@@ -1,2 +1,4 @@
+pamqp>=3.0.0a4,<4
 sphinx
 sphinx_autodoc_typehints
+yarl>=1.4.2,<2
