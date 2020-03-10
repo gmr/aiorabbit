@@ -259,6 +259,8 @@ class ExchangeTestCase(testing.ClientTestCase):
         with self.assertRaises(exceptions.CommandInvalidError):
             await self.client.exchange_declare(self.uuid4(), self.uuid4())
         self.assertEqual(self.client.state, 'Channel Open')
+        # Ensure a command will propery work after the error
+        await self.client.exchange_declare(self.uuid4(), 'direct')
 
     @testing.async_test
     async def test_exchange_declare_validation_errors(self):
