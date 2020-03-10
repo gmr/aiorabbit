@@ -30,6 +30,7 @@ class TestCase(unittest.TestCase):
         self.virtual_host = '/'
         self.heartbeat = asyncio.Event()
         self.loop = asyncio.get_event_loop()
+        self.on_remote_close = mock.Mock()
         self.server_properties = {
             'capabilities': {'authentication_failure_close': True,
                              'basic.nack': True,
@@ -47,9 +48,16 @@ class TestCase(unittest.TestCase):
         self.transport = mock.create_autospec(asyncio.Transport)
         self.transport.write = self._transport_write
         self.channel0 = channel0.Channel0(
-            self.blocked, self.username, self.password, self.virtual_host,
-            self.HEARTBEAT_INTERVAL, self.locale, self.loop, self.MAX_CHANNELS,
-            self.product)
+            self.blocked,
+            self.username,
+            self.password,
+            self.virtual_host,
+            self.HEARTBEAT_INTERVAL,
+            self.locale,
+            self.loop,
+            self.MAX_CHANNELS,
+            self.product,
+            self.on_remote_close)
 
     def _connection_start(self):
         self.channel0.process(

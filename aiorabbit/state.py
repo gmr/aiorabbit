@@ -36,6 +36,7 @@ class StateManager:
         self._state_start: float = self._loop.time()
         self._sticky_state = set({})
         self._waits: dict = {}
+        self._waiting: int = 0
 
     @property
     def exception(self) -> typing.Optional[Exception]:
@@ -63,8 +64,8 @@ class StateManager:
             pass
 
     def _clear_waits(self, wait_id: int) -> None:
-        for state in self._waits:
-            if wait_id in self._waits[state]:
+        for state in self._waits.keys():
+            if wait_id in self._waits[state].keys():
                 del self._waits[state][wait_id]
 
     def _on_exception(self,
@@ -73,9 +74,21 @@ class StateManager:
         self._logger.debug('Exception on IOLoop: %r', context)
         self._set_state(STATE_EXCEPTION, context.get('exception'))
 
+    def _reset_state(self, value: int) -> None:
+        self._logger.debug(
+            'Reset state %r while state is %r with %i waiting',
+            self.state_description(value), self.state, self._waiting)
+        self._state = value
+        self._state_start = self._loop.time()
+        self._exc = None
+        self._waits = {}
+
     def _set_state(self, value: int,
                    exc: typing.Optional[Exception] = None,
                    sticky: bool = False) -> None:
+        self._logger.debug(
+            'Set state %r (%r) while state is %r with %i waiting',
+            self.state_description(value), exc, self.state, self._waiting)
         if value == STATE_EXCEPTION or exc:
             self._logger.debug('Exception passed in with state: %r', exc)
             self._exception = exc
@@ -102,9 +115,10 @@ class StateManager:
 
     async def _wait_on_state(self, *args) -> int:
         """Wait on a specific state value to transition"""
+        self._waiting += 1
         wait_id, waits = time.monotonic_ns(), []
         for state in args:
-            if state not in self._waits:
+            if state not in self._waits and state != self._state:
                 self._waits[state] = {}
             self._waits[state][wait_id] = asyncio.Event()
             waits.append((state, self._waits[state][wait_id]))
@@ -119,8 +133,10 @@ class StateManager:
                         'Waiter %r wait on %r (%i) has finished', wait_id,
                         self.state_description(state), state)
                     self._clear_waits(wait_id)
+                    self._waiting -= 1
                     return state
             await asyncio.sleep(0.001)
         exc = self._exception
         self._exception = None
+        self._waiting -= 1
         raise exc

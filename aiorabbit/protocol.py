@@ -26,10 +26,10 @@ class AMQP(asyncio.Protocol):
 
     def connection_made(self, transport) -> None:
         self.transport = transport
-        asyncio.ensure_future(self.on_connected())
+        self.on_connected()
 
     def connection_lost(self, exc: typing.Optional[Exception]) -> None:
-        asyncio.ensure_future(self.on_disconnected(exc))
+        self.on_disconnected(exc)
 
     def data_received(self, data: bytes) -> None:
         self.buffer += data
@@ -43,8 +43,7 @@ class AMQP(asyncio.Protocol):
             else:
                 LOGGER.debug('Received frame: %r', value)
                 self.buffer = self.buffer[count:]
-                self.loop.call_soon(asyncio.ensure_future,
-                                    self.on_frame_received(channel, value))
+                self.loop.call_soon(self.on_frame_received, channel, value)
 
     def pause_writing(self) -> None:  # pragma: nocover
         LOGGER.critical('Should pause writing')

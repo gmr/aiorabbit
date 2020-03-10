@@ -2,24 +2,12 @@ import asyncio
 import functools
 import logging
 import os
+import pathlib
 import unittest
 
 from aiorabbit import client
 
 LOGGER = logging.getLogger(__name__)
-
-
-def setup_module():
-    """Ensure the test environment variables are set"""
-    try:
-        with open('build/test-environment') as f:
-            for line in f:
-                if line.startswith('export '):
-                    line = line[7:]
-                name, _, value = line.strip().partition('=')
-                os.environ[name] = value
-    except IOError:
-        pass
 
 
 def async_test(*func):
@@ -34,6 +22,21 @@ def async_test(*func):
 
 
 class AsyncTestCase(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        """Ensure the test environment variables are set"""
+        test_env = pathlib.Path('build/test-environment')
+        if not test_env.is_file():
+            test_env = pathlib.Path('../build/test-environment')
+            if not test_env.is_file():
+                raise RuntimeError('Could not find test-environment')
+        with test_env.open('r') as handle:
+            for line in handle:
+                if line.startswith('export '):
+                    line = line[7:]
+                name, _, value = line.strip().partition('=')
+                os.environ[name] = value
 
     def setUp(self) -> None:
         self.loop = asyncio.new_event_loop()
@@ -50,11 +53,13 @@ class AsyncTestCase(unittest.TestCase):
         self.loop.run_until_complete(self.loop.shutdown_asyncgens())
         if self.loop.is_running:
             self.loop.close()
+        super().tearDown()
 
     def on_timeout(self):
         self.loop.stop()
         raise TimeoutError(
             'Test duration exceeded {} seconds'.format(self.timeout))
+        pass
 
 
 class ClientTestCase(AsyncTestCase):
@@ -68,7 +73,7 @@ class ClientTestCase(AsyncTestCase):
         LOGGER.debug('In ClientTestCase.tearDown')
         if not self.client.is_closed:
             LOGGER.debug('Closing on tearDown')
-            self.loop.run_until_complete(self.close())
+            self.loop.run_until_complete(self.client.close())
         super().tearDown()
 
     def assert_state(self, *state):

@@ -4,6 +4,7 @@ AsyncIO RabbitMQ Client
 
 """
 import asyncio
+import dataclasses
 import datetime
 import logging
 import math
@@ -203,7 +204,7 @@ _IDLE_STATE = [
 
 _STATE_TRANSITIONS = {
     state.STATE_UNINITIALIZED: [STATE_DISCONNECTED],
-    state.STATE_EXCEPTION: [STATE_CLOSING, STATE_CLOSED],
+    state.STATE_EXCEPTION: [STATE_CLOSING, STATE_CLOSED, STATE_DISCONNECTED],
     STATE_DISCONNECTED: [STATE_CONNECTING],
     STATE_CONNECTING: [STATE_CONNECTED, STATE_CLOSED],
     STATE_CONNECTED: [STATE_OPENED, STATE_CLOSED],
@@ -314,6 +315,12 @@ Arguments = typing.Optional[typing.Dict[str, typing.Any]]
 NamePattern = re.compile(r'^[\w:.-]+$', flags=re.UNICODE)
 
 
+@dataclasses.dataclass()
+class _Defaults:
+    locale: str
+    product: str
+
+
 class Client(state.StateManager):
     """RabbitMQ Client"""
 
@@ -333,6 +340,7 @@ class Client(state.StateManager):
         self._channel_open = asyncio.Event()
         self._connected = asyncio.Event()
         self._delivery_tag = 0
+        self._defaults = _Defaults(locale, product)
         self._message: typing.Optional[message.Message] = None
         self._nacks = set({})
         self._on_channel_close: typing.Optional[typing.Callable] = None
@@ -344,12 +352,7 @@ class Client(state.StateManager):
         self._publisher_confirms = False
         self._url = yarl.URL(url)
         self._set_state(STATE_DISCONNECTED)
-        self._channel0 = channel0.Channel0(
-            self._blocked, self._url.user, self._url.password,
-            self._url.path[1:], self._url.query.get('heartbeat'), locale,
-            self._loop, int(self._url.query.get('channel_max', '32768')),
-            product)
-        self._max_frame_size = float(self._channel0.max_frame_size)
+        self._max_frame_size: typing.Optional[float] = None
 
     async def connect(self) -> None:
         """Connect to the RabbitMQ Server"""
@@ -358,8 +361,8 @@ class Client(state.StateManager):
 
     async def close(self) -> None:
         LOGGER.debug('Invoked Client.close() while is_closed (%r, %r)',
-                     self.is_closed, self._channel0.is_closed)
-        if self.is_closed or self._channel0.is_closed or not self._transport:
+                     self.is_closed, self._channel0)
+        if self.is_closed or not self._channel0 or not self._transport:
             LOGGER.warning('Connection is already closed')
             if self._state != STATE_CLOSED:
                 self._set_state(STATE_CLOSED)
@@ -369,11 +372,7 @@ class Client(state.StateManager):
                 self._write(commands.Channel.Close(200, 'Client Requested'))
                 self._set_state(STATE_CHANNEL_CLOSE_SENT)
                 await self._wait_on_state(STATE_CHANNEL_CLOSEOK_RECEIVED)
-        self._set_state(STATE_CLOSING)
-        await self._channel0.close()
-        self._transport.close()
-        await self._wait_on_state(STATE_CLOSED)
-        self._reset()
+        await self._close()
 
     async def confirm_select(self) -> None:
         """Turn on Publisher Confirmations
@@ -442,7 +441,7 @@ class Client(state.StateManager):
                                internal: bool = False,
                                arguments: typing.Optional[
                                    typing.Dict[str, common.FieldValue]
-                               ] = None) -> None:
+                               ] = None) -> bool:
         """Verify exchange exists, create if needed
 
         This method creates an exchange if it does not already exist, and if
@@ -482,13 +481,12 @@ class Client(state.StateManager):
                 STATE_CHANNEL_CLOSE_RECEIVED,
                 STATE_EXCHANGE_DECLAREOK_RECEIVED)
         except pamqp_exceptions.AMQPCommandInvalid as exc:
-            LOGGER.debug('Should be reconnected here %r', exc)
             raise exceptions.CommandInvalidError(str(exc))
         else:
-            LOGGER.debug('After _wait_on_state')
             if result == STATE_CHANNEL_CLOSE_RECEIVED:
                 await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
-                raise self.exception
+                return False
+        return True
 
     async def publish(self,
                       exchange: str = 'amq.direct',
@@ -650,7 +648,7 @@ class Client(state.StateManager):
                                STATE_DISCONNECTED,
                                state.STATE_EXCEPTION,
                                state.STATE_UNINITIALIZED] \
-            and not self._transport
+            or not self._transport
 
     def register_channel_close_callback(
             self, callback: typing.Callable) -> None:
@@ -675,6 +673,14 @@ class Client(state.StateManager):
     def server_properties(self) -> dict:
         return self._channel0.properties
 
+    async def _close(self) -> None:
+        LOGGER.debug('Internal close method invoked')
+        self._set_state(STATE_CLOSING)
+        await self._channel0.close()
+        self._transport.close()
+        self._set_state(STATE_CLOSED)
+        self._reset()
+
     async def _connect(self) -> None:
         self._set_state(STATE_CONNECTING)
         LOGGER.info('Connecting to %s://%s:%s@%s:%s/%s',
@@ -682,6 +688,19 @@ class Client(state.StateManager):
                     ''.ljust(len(self._url.password), '*'),
                     self._url.host, self._url.port,
                     parse.quote(self._url.path[1:], ''))
+        self._channel0 = channel0.Channel0(
+            self._blocked,
+            self._url.user,
+            self._url.password,
+            self._url.path[1:],
+            self._url.query.get('heartbeat'),
+            self._defaults.locale,
+            self._loop,
+            int(self._url.query.get('channel_max', '32768')),
+            self._defaults.product,
+            self._on_remote_close)
+        self._max_frame_size = float(self._channel0.max_frame_size)
+
         ssl = self._url.scheme == 'amqps'
         future = self._loop.create_connection(
             lambda: protocol.AMQP(
@@ -707,13 +726,13 @@ class Client(state.StateManager):
         temp = self._url.query.get('connection_timeout', '3.0')
         return socket.getdefaulttimeout() if temp is None else float(temp)
 
-    async def _on_connected(self) -> None:
+    def _on_connected(self) -> None:
         self._set_state(STATE_CONNECTED)
 
-    async def _on_disconnected(self, exc: Exception) -> None:
+    def _on_disconnected(self, exc: Exception) -> None:
         LOGGER.debug('Disconnected [%r] (%i) %s', exc, self._state, self.state)
 
-    async def _on_frame(self, channel: int, value: frame.FrameTypes) -> None:
+    def _on_frame(self, channel: int, value: frame.FrameTypes) -> None:
         if channel == 0:
             try:
                 self._channel0.process(value)
@@ -788,6 +807,10 @@ class Client(state.StateManager):
         self._set_state(STATE_CHANNEL_CLOSEOK_SENT)
         self._loop.call_soon(asyncio.ensure_future, self._open_channel())
 
+    def _on_remote_close(self, status_code: int, exc: Exception) -> None:
+        LOGGER.debug('Remote close received %i (%r)', status_code, exc)
+        self._set_state(STATE_CLOSED, exc)
+
     async def _open_channel(self) -> None:
         LOGGER.debug('Opening channel')
         self._set_state(STATE_OPENING_CHANNEL)
@@ -808,10 +831,12 @@ class Client(state.StateManager):
         return value
 
     async def _reconnect(self) -> None:
+        LOGGER.debug('Reconnecting')
         publisher_confirms = self._publisher_confirms
         self._reset()
-        LOGGER.debug('Pre-connect state: %r', self.state)
+        LOGGER.debug('Pre-reconnect state: %r', self.state)
         await self._connect()
+        LOGGER.debug('Post-connected on reconnect')
         await self._open_channel()
         LOGGER.debug('Post open state: %r', self.state)
         if publisher_confirms:
@@ -822,11 +847,15 @@ class Client(state.StateManager):
         LOGGER.debug('Resetting internal state')
         self._blocked.clear()
         self._channel = 0
+        self._channel_open.clear()
+        self._channel0 = None
         self._connected.clear()
+        self._exception = None
         self._protocol = None
         self._publisher_confirms = False
-        self._state = STATE_CLOSED
         self._transport = None
+        self._state = STATE_CLOSED
+        self._state_start = self._loop.time()
 
     @staticmethod
     def _validate_bool(name: str, value: typing.Any) -> None:
@@ -867,9 +896,6 @@ class Client(state.StateManager):
         except pamqp_exceptions.AMQPError as exc:
             LOGGER.warning('Exception raised while waiting: %s (%i) %s',
                            exc, self._state, self.state)
-            if not self.is_closed:
-                await super()._wait_on_state(STATE_CLOSED)
-                LOGGER.debug('is_closed')
             await self._reconnect()
             raise exc
         else:

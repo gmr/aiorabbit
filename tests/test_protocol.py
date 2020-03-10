@@ -32,13 +32,13 @@ class TestCase(testing.AsyncTestCase):
     async def test_multiple_frame(self):
         calls = []
 
-        async def _on_connected():
+        def _on_connected():
             pass
 
-        async def _on_disconnected(_exc):
+        def _on_disconnected(_exc):
             pass
 
-        async def _on_frame(channel, frame):
+        def _on_frame(channel, frame):
             calls.append((channel, frame))
 
         obj = protocol.AMQP(_on_connected, _on_disconnected, _on_frame)

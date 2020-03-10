@@ -38,6 +38,7 @@ async def connect(url: str = DEFAULT_URL,
         yield rabbitmq
     finally:
         if not rabbitmq.is_closed:
+            LOGGER.debug('Closing the client from context manager')
             await rabbitmq.close()
         del client
 

@@ -128,7 +128,8 @@ class Channel0(state.StateManager):
                  locale: str,
                  loop: asyncio.AbstractEventLoop,
                  max_channels: int,
-                 product: str):
+                 product: str,
+                 on_remote_close: callable):
         super().__init__(loop)
         self.blocked = blocked
         self.locale = locale
@@ -141,6 +142,7 @@ class Channel0(state.StateManager):
         self.heartbeat_interval = heartbeat_interval
         self.max_frame_size = constants.FRAME_MAX_SIZE
         self.max_channels = max_channels
+        self.on_remote_close = on_remote_close
 
     def process(self, value: COMMANDS) -> None:
         LOGGER.debug('Processing %r', value)
@@ -187,6 +189,12 @@ class Channel0(state.StateManager):
         self._set_state(STATE_CLOSE_SENT)
         await self._wait_on_state(STATE_CLOSED)
 
+    def reset(self):
+        LOGGER.debug('Resetting channel0')
+        self._reset_state(state.STATE_UNINITIALIZED)
+        self.properties: dict = {}
+        self.transport: typing.Optional[asyncio.Transport] = None
+
     @property
     def is_closed(self) -> bool:
         return self._state in [STATE_CLOSE_OK_SENT,
@@ -207,16 +215,19 @@ class Channel0(state.StateManager):
         self.transport.write(frame.marshal(commands.Connection.CloseOk(), 0))
         if value.reply_code < 300:
             self._set_state(STATE_CLOSE_OK_SENT)
+            self.on_remote_close(value.reply_code, None)
         elif value.reply_code in pamqp_exceptions.CLASS_MAPPING:
             self._set_state(
                 STATE_CLOSE_OK_SENT,
                 pamqp_exceptions.CLASS_MAPPING[value.reply_code](
                     value.reply_text))
+            self.on_remote_close(value.reply_code, self._exception)
         else:
             self._set_state(
                 STATE_CLOSE_OK_SENT,
                 exceptions.ConnectionClosedException(
                     value.reply_code, value.reply_text))
+            self.on_remote_close(value.reply_code, self._exception)
 
     def _process_start(self, value: commands.Connection.Start) -> None:
         if (value.version_major,

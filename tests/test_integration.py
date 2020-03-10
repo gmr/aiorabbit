@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 from unittest import mock
 import uuid
@@ -10,18 +11,7 @@ import aiorabbit
 from aiorabbit import client, exceptions
 from tests import testing
 
-
-def setup_module():
-    """Ensure the test environment variables are set"""
-    try:
-        with open('build/test-environment') as f:
-            for line in f:
-                if line.startswith('export '):
-                    line = line[7:]
-                name, _, value = line.strip().partition('=')
-                os.environ[name] = value
-    except IOError:
-        pass
+LOGGER = logging.getLogger(__name__)
 
 
 class ContextManagerTestCase(testing.AsyncTestCase):
@@ -29,27 +19,31 @@ class ContextManagerTestCase(testing.AsyncTestCase):
     @testing.async_test
     async def test_context_manager_open(self):
         async with aiorabbit.connect(
-                os.environ['RABBITMQ_URI'], loop=self.loop) as c:
-            await c.confirm_select()
-            self.assertEqual(c._state, client.STATE_CONFIRM_SELECTOK_RECEIVED)
-        self.assertEqual(c._state, client.STATE_CLOSED)
+                os.environ['RABBITMQ_URI'], loop=self.loop) as _client:
+            await _client.confirm_select()
+            self.assertEqual(_client._state,
+                             client.STATE_CONFIRM_SELECTOK_RECEIVED)
+        self.assertEqual(_client._state, client.STATE_CLOSED)
 
     @testing.async_test
     async def test_context_manager_exception(self):
         async with aiorabbit.connect(
-                os.environ['RABBITMQ_URI'], loop=self.loop) as c:
-            await c.confirm_select()
+                os.environ['RABBITMQ_URI'], loop=self.loop) as _client:
+            await _client.confirm_select()
             with self.assertRaises(RuntimeError):
-                await c.confirm_select()
-        self.assertEqual(c._state, client.STATE_CLOSED)
+                await _client.confirm_select()
+        self.assertEqual(_client._state, client.STATE_CLOSED)
 
     @testing.async_test
     async def test_context_manager_remote_close(self):
         async with aiorabbit.connect(
-                os.environ['RABBITMQ_URI'], loop=self.loop) as c:
-            await c._on_frame(
+                os.environ['RABBITMQ_URI'], loop=self.loop) as _client:
+            LOGGER.debug('Sending admin shutdown frame')
+            _client._on_frame(
                 0, commands.Connection.Close(200, 'Admin Shutdown'))
-        self.assertEqual(c._state, client.STATE_CLOSED)
+            while not _client.is_closed:
+                await asyncio.sleep(0.1)
+        self.assertEqual(_client._state, client.STATE_CLOSED)
 
 
 class IntegrationTestCase(testing.ClientTestCase):
@@ -57,8 +51,8 @@ class IntegrationTestCase(testing.ClientTestCase):
     @testing.async_test
     async def test_channel_recycling(self):
         await self.connect()
+        self.assertEqual(self.client._channel, 1)
         await self.close()
-        self.client._channel = self.client._channel0.max_channels
         await self.connect()
         self.assertEqual(self.client._channel, 1)
         await self.close()
@@ -264,7 +258,7 @@ class ExchangeTestCase(testing.ClientTestCase):
         await self.connect()
         with self.assertRaises(exceptions.CommandInvalidError):
             await self.client.exchange_declare(self.uuid4(), self.uuid4())
-        self.assertEqual(self.client.state, 'Connect')
+        self.assertEqual(self.client.state, 'Channel Open')
 
     @testing.async_test
     async def test_exchange_declare_validation_errors(self):
