@@ -46,12 +46,13 @@ jobs:
           echo "export RABBITMQ_URI=amqp://guest:guest@rabbitmq:5672/%2f" > build/test-environment
 
       - name: Run flake8 tests
-        run: flake8 --output build/flake8.txt --tee
+        run: flake8
 
       - name: Run tests
-        run: nosetests
-        env:
-          NOSE_LOGFORMAT: "%(levelname) -10s %(asctime)s %(name) -25s %(funcName) -20s: %(message)s"
+        run: coverage run
+
+      - name: Output coverage
+        run: coverage report && coverage xml
 
       - name: Upload Coverage
         uses: codecov/codecov-action@v1.0.2
