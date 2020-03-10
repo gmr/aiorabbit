@@ -259,7 +259,7 @@ class ExchangeTestCase(testing.ClientTestCase):
         with self.assertRaises(exceptions.CommandInvalidError):
             await self.client.exchange_declare(self.uuid4(), self.uuid4())
         self.assertEqual(self.client.state, 'Channel Open')
-        # Ensure a command will propery work after the error
+        # Ensure a command will properly work after the error
         await self.client.exchange_declare(self.uuid4(), 'direct')
 
     @testing.async_test
@@ -296,6 +296,10 @@ class ExchangeTestCase(testing.ClientTestCase):
     @testing.async_test
     async def test_exchange_bind_raises_exchange_not_found(self):
         await self.connect()
+        self.assertEqual(self.client._channel, 1)
         with self.assertRaises(exceptions.ExchangeNotFoundError):
             await self.client.exchange_bind(
                 self.uuid4(), self.uuid4(), self.uuid4())
+        self.assertEqual(self.client._channel, 2)
+        # Ensure a command will properly work after the error
+        await self.client.exchange_declare(self.uuid4(), 'direct')
