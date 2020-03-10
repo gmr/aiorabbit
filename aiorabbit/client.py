@@ -490,67 +490,6 @@ class Client(state.StateManager):
                 await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
                 raise self.exception
 
-    async def exchange_declare(self,
-                               name: str,
-                               exchange_type: str,
-                               passive: bool = False,
-                               durable: bool = False,
-                               auto_delete: bool = False,
-                               internal: bool = False,
-                               nowait: bool = False,
-                               arguments: Arguments = None) \
-            -> typing.Optional[bool]:
-        """Verify exchange exists, create if needed
-
-        This method creates an exchange if it does not already exist, and if
-        the exchange exists, verifies that it is of the correct and expected
-        class.
-
-        If ``passive`` is set, the method will return a bool indicating if the
-        exchange exists with the same name.
-
-        :param name: The exchange name to verify/create
-        :param exchange_type: The exchange type
-        :param passive: If set, the method will return ``True`` if the exchange
-            already exists with the same name.
-        :param durable: If set when creating a new exchange, the exchange will
-            be marked as durable. Durable exchanges remain active when a server
-            restarts.
-        :param auto_delete: If set, the exchange is deleted when all queues
-            have finished using it.
-        :param internal: If set, the exchange may not be used directly by
-            publishers, but only when bound to other exchanges.
-        :param nowait: If set, the server will not respond to the method.
-        :param arguments: A set of arguments for the declaration. The syntax
-            and semantics of these arguments depends on the server
-            implementation.
-        :raises: :exc:`TypeError`
-        :raises: :exc:`ValueError`
-        :raises: :exc:`~aiorabbit.exceptions.InvalidRequestError`
-
-        """
-        self._validate_exchange_name('name', name)
-        self._validate_short_str('exchange_type', exchange_type)
-        self._validate_bool('passive', passive)
-        self._validate_bool('durable', durable)
-        self._validate_bool('auto_delete', auto_delete)
-        self._validate_bool('internal', internal)
-        self._validate_bool('nowait', nowait)
-        if arguments:
-            self._validate_field_table('arguments', arguments)
-        elif passive and nowait:
-            raise exceptions.InvalidRequestError(
-                'Can not specify both passive and nowait')
-        self._write(commands.Exchange.Declare(
-            0, name, exchange_type, passive, durable, auto_delete, internal,
-            nowait, arguments))
-        self._set_state(STATE_EXCHANGE_DECLARE_SENT)
-        result = await self._wait_on_state(
-            STATE_EXCHANGE_DECLAREOK_RECEIVED, STATE_CHANNEL_CLOSE_RECEIVED)
-        if result == STATE_CHANNEL_CLOSE_RECEIVED:
-            await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
-        return result == STATE_EXCHANGE_DECLAREOK_RECEIVED if passive else None
-
     async def publish(self,
                       exchange: str = 'amq.direct',
                       routing_key: str = '',
@@ -573,8 +512,8 @@ class Client(state.StateManager):
             -> typing.Union[None, bool, typing.Tuple[bool, message.Message]]:
         """Publish a message to RabbitMQ
 
-        `message_body` can either be :py:class:`str` or :py:class:`bytes`. If
-        it is a :py:class:`str`, it will be encoded, using ``UTF-8`` encoding.
+        `message_body` can either be :class:`str` or :class:`bytes`. If
+        it is a :class:`str`, it will be encoded, using ``UTF-8`` encoding.
 
         If publisher confirmations are enabled (see
         :meth:`~Client.confirm_select`), will return bool indicating success
@@ -928,11 +867,11 @@ class Client(state.StateManager):
         except pamqp_exceptions.AMQPError as exc:
             LOGGER.warning('Exception raised while waiting: %s (%i) %s',
                            exc, self._state, self.state)
-            #if not self.is_closed:
-            #    await super()._wait_on_state(STATE_CLOSED)
-            #    LOGGER.debug('is_closed')
-            #await self._reconnect()
-            #raise exc
+            if not self.is_closed:
+                await super()._wait_on_state(STATE_CLOSED)
+                LOGGER.debug('is_closed')
+            await self._reconnect()
+            raise exc
         else:
             self._logger.debug('Post state._wait_on_state: %r', result)
             return result

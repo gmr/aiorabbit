@@ -21,7 +21,7 @@ async def connect(url: str = DEFAULT_URL,
                   locale: str = DEFAULT_LOCALE,
                   product: str = DEFAULT_PRODUCT,
                   loop: typing.Optional[asyncio.AbstractEventLoop] = None):
-    """Connect to RabbitMQ, returning a :py:class:`asyncio.client.Client`
+    """Connect to RabbitMQ, returning a :class:`asyncio.client.Client`
     instance.
 
     :param url: The URL to connect to RabbitMQ with

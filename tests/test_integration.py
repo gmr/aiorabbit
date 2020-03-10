@@ -1,13 +1,27 @@
 import asyncio
 import os
 from unittest import mock
+import uuid
 
-from pamqp import commands
+from pamqp import commands, constants
 from pamqp import exceptions as pamqp_exceptions
 
 import aiorabbit
 from aiorabbit import client, exceptions
-from . import testing
+from tests import testing
+
+
+def setup_module():
+    """Ensure the test environment variables are set"""
+    try:
+        with open('build/test-environment') as f:
+            for line in f:
+                if line.startswith('export '):
+                    line = line[7:]
+                name, _, value = line.strip().partition('=')
+                os.environ[name] = value
+    except IOError:
+        pass
 
 
 class ContextManagerTestCase(testing.AsyncTestCase):
