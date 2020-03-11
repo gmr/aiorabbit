@@ -1,6 +1,28 @@
 import datetime
 
 import pkg_resources
+import sphinx_material
+
+html_theme = 'sphinx_material'
+html_theme_path = sphinx_material.html_theme_path()
+html_context = sphinx_material.get_html_context()
+html_sidebars = {
+    "**": ["globaltoc.html", "searchbox.html"]
+}
+html_theme_options = {
+    'base_url': 'http://aiorabbit.readthedocs.io',
+    'repo_url': 'https://github.com/gmr/aiorabbit/',
+    'repo_name': 'aiorabbit',
+    'html_minify': False,
+    'css_minify': False,
+    'nav_title': 'aiorabbit',
+    'logo_icon': '🐇',
+    'globaltoc_depth': 2,
+    'theme_color': 'fc6600',
+    'color_primary': 'blue-grey',
+    'color_accent': 'orange'
+}
+templates_path = ['_templates']
 
 master_doc = 'index'
 project = 'aiorabbit'
@@ -8,9 +30,9 @@ release = version = pkg_resources.get_distribution(project).version
 copyright = '{}, Gavin M. Roy'.format(datetime.date.today().year)
 
 extensions = [
+    'sphinx_material',
     'sphinx.ext.autodoc',
     'sphinx_autodoc_typehints',
-    'sphinx.ext.autosummary',
     'sphinx.ext.intersphinx',
     'sphinx.ext.viewcode'
 ]
@@ -21,3 +43,4 @@ intersphinx_mapping = {'python': ('https://docs.python.org/3', None),
                        'pamqp': ('https://pamqp.readthedocs.io/en/latest/', None)}
 
 autodoc_default_options = {'autodoc_typehints': 'description'}
+
