@@ -1,5 +1,6 @@
 pamqp>=3.0.0a4,<4
 Sphinx==2.4.4
-sphinx-autodoc-typehints==1.10.3
+sphinx-autodoc-typehints
 sphinx-material==0.0.23
+typing-extensions
 yarl>=1.4.2,<2
