@@ -1,0 +1,16 @@
+.md-content {
+    margin-right: 2em;
+}
+.md-main__inner {
+    padding: 0;
+}
+.navheader {
+    padding-left: 1em;
+}
+.md-sidebar--secondary {
+    display: none;
+}
+.viewcode-link {
+    font-size: .75em;
+    margin-left: .5em;
+}

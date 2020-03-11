@@ -14,15 +14,19 @@ html_theme_options = {
     'repo_url': 'https://github.com/gmr/aiorabbit/',
     'repo_name': 'aiorabbit',
     'html_minify': False,
-    'css_minify': False,
+    'css_minify': True,
     'nav_title': 'aiorabbit',
     'logo_icon': '🐇',
     'globaltoc_depth': 2,
     'theme_color': 'fc6600',
-    'color_primary': 'blue-grey',
-    'color_accent': 'orange'
+    'color_primary': 'grey',
+    'color_accent': 'orange',
+    'version_dropdown': False
 }
-templates_path = ['_templates']
+html_static_path = ['_static']
+html_css_files = [
+    'css/custom.css'
+]
 
 master_doc = 'index'
 project = 'aiorabbit'
