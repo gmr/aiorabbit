@@ -1,7 +1,4 @@
-"""
-aiorabbit
-=========
-"""
+# coding: utf-8
 import asyncio
 import contextlib
 import logging
@@ -19,8 +16,14 @@ async def connect(url: str = DEFAULT_URL,
                   locale: str = DEFAULT_LOCALE,
                   product: str = DEFAULT_PRODUCT,
                   loop: typing.Optional[asyncio.AbstractEventLoop] = None):
-    """Connect to RabbitMQ, returning a :class:`aiorabbit.client.Client`
-    instance.
+    """Asynchronous context manager that connects to RabbitMQ, returning
+    a connected :class:`~aiorabbit.client.Client` as the target.
+
+    .. code-block:: python3
+       :caption: Example Usage
+
+       async with aiorabbit.connect(RABBITMQ_URL) as client:
+            await client.exchange_declare('test', 'topic')
 
     :param url: The URL to connect to RabbitMQ with
     :param locale: The locale for the connection, default `en-US`
@@ -28,14 +31,14 @@ async def connect(url: str = DEFAULT_URL,
     :param loop: Optional :mod:`asyncio` event loop to use
 
     """
-    rabbitmq = client.Client(url, locale, product, loop)
-    await rabbitmq.connect()
+    rmq_client = client.Client(url, locale, product, loop)
+    await rmq_client.connect()
     try:
-        yield rabbitmq
+        yield rmq_client
     finally:
-        if not rabbitmq.is_closed:
+        if not rmq_client.is_closed:
             LOGGER.debug('Closing the client from context manager')
-            await rabbitmq.close()
+            await rmq_client.close()
 
 __all__ = [
     'client',

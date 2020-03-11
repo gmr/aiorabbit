@@ -1,10 +1,4 @@
-"""
-Channel 0
-=========
-
-Handles all communication on Channel0
-
-"""
+# coding: utf-8
 import asyncio
 import logging
 import platform

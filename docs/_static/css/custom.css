@@ -14,3 +14,23 @@
     font-size: .75em;
     margin-left: .5em;
 }
+.caption-text {
+    font-style: oblique;
+}
+code.descname {
+    background: transparent;
+    box-shadow: none;
+    font-size: 100% !important;
+}
+code.descname {
+    background: transparent;
+    box-shadow: none;
+    font-size: 100% !important;
+    font-weight: bold;
+}
+code.descclassname {
+    background: transparent;
+    box-shadow: none;
+    font-size: 100% !important;
+    font-weight: bold;
+}

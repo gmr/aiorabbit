@@ -35,9 +35,10 @@ Documentation
    :maxdepth: 1
    :hidden:
 
-   usage
+   connect
    api
    exceptions
+   examples
    genindex
 
 License

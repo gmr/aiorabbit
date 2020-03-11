@@ -1,8 +1,8 @@
-API
-===
-.. automodule:: aiorabbit
-   :members:
-   :no-undoc-members:
+Client API
+==========
+
+The :class:`~aiorabbit.client.Client` class provides all of the methods required
+for interfacing with RabbitMQ.
 
 .. autoclass:: aiorabbit.client.Client
    :members:

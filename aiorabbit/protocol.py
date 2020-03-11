@@ -1,7 +1,4 @@
-"""
-Implements the AMQP Protocol
-
-"""
+# coding: utf-8
 import asyncio
 import logging
 import typing
@@ -12,7 +9,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class AMQP(asyncio.Protocol):
-
+    """AMQP Protocol adapter for AsyncIO"""
     def __init__(self,
                  on_connected: callable,
                  on_disconnected: callable,

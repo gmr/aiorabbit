@@ -34,12 +34,17 @@ release = version = pkg_resources.get_distribution(project).version
 copyright = '{}, Gavin M. Roy'.format(datetime.date.today().year)
 
 extensions = [
-    'sphinx_material',
     'sphinx.ext.autodoc',
     'sphinx_autodoc_typehints',
     'sphinx.ext.intersphinx',
-    'sphinx.ext.viewcode'
+    'sphinx.ext.viewcode',
+    'sphinx_material'
 ]
+
+set_type_checking_flag = True
+typehints_fully_qualified = True
+always_document_param_types = True
+typehints_document_rtype = True
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']

@@ -1,8 +1,4 @@
-"""
-AsyncIO RabbitMQ Client
-=======================
-
-"""
+# coding: utf-8
 import asyncio
 import dataclasses
 import datetime
@@ -333,8 +329,17 @@ class _Defaults:
 
 
 class Client(state.StateManager):
-    """RabbitMQ Client"""
+    """Asynchronous RabbitMQ Client
 
+    .. code-block:: python3
+       :caption: Example Usage
+
+        client = Client(RABBITMQ_URL)
+        await client.connect()
+        await client.exchange_declare('test', 'topic')
+        await client.close()
+
+    """
     STATE_MAP = _STATE_MAP
     STATE_TRANSITIONS = _STATE_TRANSITIONS
 
@@ -343,7 +348,6 @@ class Client(state.StateManager):
                  locale: str = DEFAULT_LOCALE,
                  product: str = DEFAULT_PRODUCT,
                  loop: typing.Optional[asyncio.AbstractEventLoop] = None):
-        LOGGER.info('Creating new client.Client')
         super().__init__(loop or asyncio.get_running_loop())
         self._acks = set({})
         self._blocked = asyncio.Event()
@@ -375,7 +379,7 @@ class Client(state.StateManager):
         LOGGER.debug('Invoked Client.close() while is_closed (%r, %r)',
                      self.is_closed, self._channel0)
         if self.is_closed or not self._channel0 or not self._transport:
-            LOGGER.warning('Connection is already closed')
+            LOGGER.warning('Close called when connection is not open')
             if self._state != STATE_CLOSED:
                 self._set_state(STATE_CLOSED)
             return
@@ -525,25 +529,26 @@ class Client(state.StateManager):
         `message_body` can either be :class:`str` or :class:`bytes`. If
         it is a :class:`str`, it will be encoded, using ``UTF-8`` encoding.
 
-        If publisher confirmations are enabled (see
-        :meth:`~Client.confirm_select`), will return bool indicating success
-        or failure.
+        If publisher confirmations are enabled, will return `True` or `False`
+        indicating success or failure.
+
+        .. seealso:: :meth:`Client.confirm_select`
 
         :param exchange: The exchange to publish to. Default: `amq.direct`
         :param routing_key: The routing key to publish with. Default: ``
         :param message_body: The message body to publish. Default: ``
-        :param mandatory: Indicate mandatory routing
-        :param immediate: Request immediate delivery
+        :param mandatory: Indicate mandatory routing. Default: `False`
+        :param immediate: Request immediate delivery. Default: `False`
         :param app_id: Creating application id
         :param content_type: MIME content type
         :param content_encoding: MIME content encoding
         :param correlation_id: Application correlation identifier
-        :param delivery_mode: Non-persistent (1) or persistent (2)
+        :param delivery_mode: Non-persistent (`1`) or persistent (`2`)
         :param expiration: Message expiration specification
         :param headers: Message header field table
         :param message_id: Application message identifier
         :param message_type: Message type name
-        :param priority: Message priority, 0 to 9
+        :param priority: Message priority, `0` to `9`
         :param reply_to: Address to reply to
         :param timestamp: Message timestamp
         :param user_id: Creating user id
@@ -704,9 +709,8 @@ class Client(state.StateManager):
         """Contains the capabilities of the currently connected
         RabbitMQ Server.
 
-        .. rubric:: Example Value
-
         .. code-block:: python
+           :caption: Example return value
 
            ['authentication_failure_close',
             'basic.nack',
@@ -728,9 +732,8 @@ class Client(state.StateManager):
         """Contains the negotiated properties for the currently connected
         RabbitMQ Server.
 
-        .. rubric:: Example Value
-
         .. code-block:: python
+           :caption: Example return value
 
            {'capabilities': {'authentication_failure_close': True,
                              'basic.nack': True,

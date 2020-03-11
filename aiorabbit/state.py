@@ -1,8 +1,4 @@
-"""
-State Manager
-=============
-
-"""
+# coding: utf-8
 import asyncio
 import inspect
 import logging
