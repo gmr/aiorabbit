@@ -34,3 +34,6 @@ code.descclassname {
     font-size: 100% !important;
     font-weight: bold;
 }
+.rst-versions {
+    font-size: 1.75em;
+}
