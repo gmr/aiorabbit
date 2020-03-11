@@ -13,7 +13,7 @@ html_theme_options = {
     'base_url': 'http://aiorabbit.readthedocs.io',
     'repo_url': 'https://github.com/gmr/aiorabbit/',
     'repo_name': 'aiorabbit',
-    'html_minify': False,
+    'html_minify': True,
     'css_minify': True,
     'nav_title': 'aiorabbit',
     'logo_icon': '🐇',
