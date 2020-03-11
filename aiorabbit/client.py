@@ -14,13 +14,11 @@ from pamqp import body, commands, frame, header
 from pamqp import exceptions as pamqp_exceptions
 import yarl
 
-from aiorabbit import channel0, exceptions, message, protocol, state
+from aiorabbit import (channel0, DEFAULT_LOCALE, DEFAULT_PRODUCT, DEFAULT_URL,
+                       exceptions, message, protocol, state)
 
 LOGGER = logging.getLogger(__name__)
 
-DEFAULT_LOCALE = 'en-US'
-DEFAULT_PRODUCT = 'aiorabbit'
-DEFAULT_URL = 'amqp://guest:guest@localhost:5672/%2f'
 
 FieldArray = typing.List['FieldValue']  # type: ignore
 FieldTable = typing.Dict[str, 'FieldValue']  # type: ignore

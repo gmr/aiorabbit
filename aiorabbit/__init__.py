@@ -4,9 +4,12 @@ import contextlib
 import logging
 import typing
 
-from aiorabbit import client, exceptions
+from aiorabbit import exceptions
 from aiorabbit.__version__ import version
-from aiorabbit.client import DEFAULT_LOCALE, DEFAULT_PRODUCT, DEFAULT_URL
+
+DEFAULT_LOCALE = 'en-US'
+DEFAULT_PRODUCT = 'aiorabbit'
+DEFAULT_URL = 'amqp://guest:guest@localhost:5672/%2f'
 
 LOGGER = logging.getLogger('aiorabbit')
 
@@ -31,6 +34,8 @@ async def connect(url: str = DEFAULT_URL,
     :param loop: Optional :mod:`asyncio` event loop to use
 
     """
+    from aiorabbit import client
+
     rmq_client = client.Client(url, locale, product, loop)
     await rmq_client.connect()
     try:
