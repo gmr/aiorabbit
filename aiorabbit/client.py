@@ -389,12 +389,13 @@ class Client(state.StateManager):
     async def confirm_select(self) -> None:
         """Turn on Publisher Confirmations
 
-        :raises: :exc:`RuntimeError`
-        :raises: :exc:`aiorabbit.exceptions.NotSupportedError`
+        :raises RuntimeError: if publisher confirmations are already enabled
+        :raises ~aiorabbit.exceptions.NotSupportedError:
+            if publisher confirmations are not available on the RabbitMQ server
 
         """
         LOGGER.debug('Enabling confirm select')
-        if not self.server_capabilities.get('publisher_confirms'):
+        if 'publisher_confirms' not in self.server_capabilities:
             raise exceptions.NotSupportedError(
                 'Server does not support publisher confirmations')
         elif self._publisher_confirms:
@@ -417,10 +418,11 @@ class Client(state.StateManager):
         :param source: exchange name
         :param routing_key: Message routing key
         :param arguments: Arguments for binding
-        :raises: :exc:`TypeError`
-        :raises: :exc:`ValueError`
-        :raises: :exc:`~aiorabbit.exceptions.CommandInvalidError`
-        :raises: :exc:`~aiorabbit.exceptions.ExchangeNotFoundError`
+        :raises TypeError: if an argument is of the wrong data type
+        :raises ~aiorabbit.exceptions.CommandInvalidError:
+            if the sent command is invalid due to an argument value
+        :raises ~aiorabbit.exceptions.ExchangeNotFoundError:
+            if the one of the specified exchanges does not exist
 
         """
         if not isinstance(destination, str):
@@ -464,9 +466,9 @@ class Client(state.StateManager):
         :param auto_delete: Auto-delete when unused
         :param internal: Create internal exchange
         :param arguments: Arguments for declaration
-        :raises: :exc:`TypeError`
-        :raises: :exc:`ValueError`
-        :raises: :exc:`~aiorabbit.exceptions.CommandInvalidError`
+        :raises TypeError: if an argument is of the wrong data type
+        :raises ~aiorabbit.exceptions.CommandInvalidError:
+            if the sent command is invalid due to an argument value
 
         """
         if not isinstance(exchange, str):
@@ -545,8 +547,8 @@ class Client(state.StateManager):
         :param reply_to: Address to reply to
         :param timestamp: Message timestamp
         :param user_id: Creating user id
-        :raises: :exc:`TypeError`
-        :raises: :exc:`ValueError`
+        :raises TypeError: if an argument is of the wrong data type
+        :raises ValueError: if the value of one an argument does not validate
 
         """
         self._validate_exchange_name('exchange', exchange)
@@ -664,6 +666,8 @@ class Client(state.StateManager):
             self, callback: typing.Callable) -> None:
         """Register a callback that is invoked when RabbitMQ closes a channel.
 
+        :param callback: The method or function to invoke as a callback
+
         .. note:: This is provided for information purposes only. A connected
                  :class:`~aiorabbit.client.Client` will automatically create a
                  new channel when the current channel is closed.
@@ -678,6 +682,8 @@ class Client(state.StateManager):
         """Register a callback that is invoked when RabbitMQ delivers a message
         that is to be consumed.
 
+        :param callback: The method or function to invoke as a callback
+
         """
         LOGGER.debug('Registered message delivery callback: %r', callback)
         self._on_message_delivery = callback
@@ -687,17 +693,20 @@ class Client(state.StateManager):
         """Register a callback that is invoked when RabbitMQ returns a
         published message.
 
+        :param callback: The method or function to invoke as a callback
+
         """
         LOGGER.debug('Registered message return callback: %r', callback)
         self._on_message_return = callback
 
     @property
-    def server_capabilities(self) -> list:
+    def server_capabilities(self) -> typing.List[str]:
         """Contains the capabilities of the currently connected
         RabbitMQ Server.
 
+        .. rubric:: Example Value
+
         .. code-block:: python
-           :name: Example Value
 
            ['authentication_failure_close',
             'basic.nack',
@@ -714,12 +723,14 @@ class Client(state.StateManager):
                 self._channel0.properties['capabilities'].items() if value]
 
     @property
-    def server_properties(self) -> dict:
+    def server_properties(self) \
+            -> typing.Dict[str, typing.Union[str, typing.Dict[str, bool]]]:
         """Contains the negotiated properties for the currently connected
         RabbitMQ Server.
 
+        .. rubric:: Example Value
+
         .. code-block:: python
-           :name: Example Value
 
            {'capabilities': {'authentication_failure_close': True,
                              'basic.nack': True,

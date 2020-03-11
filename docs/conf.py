@@ -19,3 +19,10 @@ templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 intersphinx_mapping = {'python': ('https://docs.python.org/3', None),
                        'pamqp': ('https://pamqp.readthedocs.io/en/latest/', None)}
+
+autodoc_default_options = {
+    'autodoc_default_flags': ['members'],
+    'autodoc_typehints': 'description',
+    'member-order': 'bysource',
+    'undoc-members': False
+}

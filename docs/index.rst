@@ -34,7 +34,6 @@ Documentation
 .. toctree::
    :maxdepth: 1
 
-   goals
    usage
    api
    exceptions
