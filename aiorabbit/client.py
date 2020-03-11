@@ -414,8 +414,8 @@ class Client(state.StateManager):
             -> None:
         """Bind exchange to an exchange.
 
-        :param destination: exchange name
-        :param source: exchange name
+        :param destination: Destination exchange name
+        :param source: Source exchange name
         :param routing_key: Message routing key
         :param arguments: Arguments for binding
         :raises TypeError: if an argument is of the wrong data type
@@ -459,7 +459,7 @@ class Client(state.StateManager):
         the exchange exists, verifies that it is of the correct and expected
         class.
 
-        :param exchange: exchange name
+        :param exchange: Exchange name
         :param exchange_type: Exchange type
         :param passive: Do not create exchange
         :param durable: Request a durable exchange

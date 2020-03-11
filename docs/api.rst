@@ -7,3 +7,4 @@ API
 .. autoclass:: aiorabbit.client.Client
    :members:
    :no-undoc-members:
+   :member-order: bysource
