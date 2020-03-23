@@ -10,7 +10,7 @@ import socket
 import typing
 from urllib import parse
 
-from pamqp import body, commands, frame, header
+from pamqp import base, body, commands, frame, header
 from pamqp import exceptions as pamqp_exceptions
 import yarl
 
@@ -355,6 +355,7 @@ class Client(state.StateManager):
         self._connected = asyncio.Event()
         self._delivery_tag = 0
         self._defaults = _Defaults(locale, product)
+        self._last_frame: typing.Optional[base.Frame] = None
         self._message: typing.Optional[message.Message] = None
         self._nacks = set({})
         self._on_channel_close: typing.Optional[typing.Callable] = None
@@ -444,8 +445,10 @@ class Client(state.StateManager):
             STATE_CHANNEL_CLOSE_RECEIVED,
             STATE_EXCHANGE_BINDOK_RECEIVED)
         if result == STATE_CHANNEL_CLOSE_RECEIVED:
+            err_frame = self._last_frame
             await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
-            raise exceptions.ExchangeNotFoundError()
+            raise exceptions.CLASS_MAPPING[err_frame.reply_code](
+                err_frame.reply_code)
 
     async def exchange_declare(self,
                                exchange: str = '',
@@ -455,7 +458,7 @@ class Client(state.StateManager):
                                auto_delete: bool = False,
                                internal: bool = False,
                                arguments: typing.Optional[FieldTable] = None) \
-            -> bool:
+            -> None:
         """Verify exchange exists, create if needed
 
         This method creates an exchange if it does not already exist, and if
@@ -470,9 +473,10 @@ class Client(state.StateManager):
         :param internal: Create internal exchange
         :param arguments: Arguments for declaration
         :raises TypeError: if an argument is of the wrong data type
-        :raises ~aiorabbit.exceptions.CommandInvalidError:
+        :raises ~aiorabbit.exceptions.NotFound:
             if the sent command is invalid due to an argument value
-
+        :raises ~aiorabbit.exceptions.CommandInvalid:
+            when an exchange type or other parameter is invalid
         """
         if not isinstance(exchange, str):
             raise TypeError('exchange must be of type str')
@@ -495,13 +499,13 @@ class Client(state.StateManager):
             result = await self._wait_on_state(
                 STATE_CHANNEL_CLOSE_RECEIVED,
                 STATE_EXCHANGE_DECLAREOK_RECEIVED)
-        except pamqp_exceptions.AMQPCommandInvalid as exc:
-            raise exceptions.CommandInvalidError(str(exc))
-        else:
-            if result == STATE_CHANNEL_CLOSE_RECEIVED:
-                await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
-                return False
-        return True
+        except pamqp_exceptions.AMQPCommandInvalid as err:
+            raise exceptions.CommandInvalid(str(err))
+        if result == STATE_CHANNEL_CLOSE_RECEIVED:
+            err_frame = self._last_frame
+            await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
+            raise exceptions.CLASS_MAPPING[err_frame.reply_code](
+                err_frame.reply_code)
 
     async def exchange_delete(self,
                               exchange: str = '',
@@ -714,6 +718,189 @@ class Client(state.StateManager):
                                state.STATE_UNINITIALIZED] \
             or not self._transport
 
+    async def queue_bind(self,
+                         queue: str = '',
+                         exchange: str = '',
+                         routing_key: str = '',
+                         arguments: typing.Optional[FieldTable] = None) \
+        -> None:
+        """Bind queue to an exchange
+
+        This method binds a queue to an exchange. Until a queue is bound it
+        will not receive any messages. In a classic messaging model,
+        store-and- forward queues are bound to a direct exchange and
+        subscription queues are bound to a topic exchange.
+
+        :param queue: Specifies the name of the queue to bind
+        :param exchange: Name of the exchange to bind to
+        :param routing_key: Message routing key
+        :param arguments: Arguments of binding
+        :raises TypeError: if an argument is of the wrong data type
+        :raises ValueError: when an argument fails to validate
+        :raises ~aiorabbit.exceptions.CommandInvalidError:
+            if the sent command is invalid due to an argument value
+
+        """
+        if not isinstance(queue, str):
+            raise TypeError('queue must be of type str')
+        elif not isinstance(exchange, str):
+            raise TypeError('exchange must be of type str')
+        elif not isinstance(routing_key, str):
+            raise TypeError('routing_Key must be of type str')
+        elif arguments and not isinstance(arguments, dict):
+            raise TypeError('arguments must be of type dict')
+        self._write(commands.Queue.Bind(
+            0, queue, exchange, routing_key, False, arguments))
+        self._set_state(STATE_QUEUE_BIND_SENT)
+        result = await self._wait_on_state(
+            STATE_QUEUE_BINDOK_RECEIVED, STATE_CHANNEL_CLOSE_RECEIVED)
+        if result == STATE_CHANNEL_CLOSE_RECEIVED:
+            err_frame = self._last_frame
+            await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
+            raise exceptions.CLASS_MAPPING[err_frame.reply_code](
+                err_frame.reply_code)
+
+    async def queue_declare(self,
+                            queue: str = '',
+                            passive: bool = False,
+                            durable: bool = False,
+                            exclusive: bool = False,
+                            auto_delete: bool = False,
+                            arguments: typing.Optional[FieldTable] = None) \
+            -> typing.Tuple[int, int]:
+        """Declare queue, create if needed
+
+        This method creates or checks a queue. When creating a new queue the
+        client can specify various properties that control the durability of
+        the queue and its contents, and the level of sharing for the queue.
+
+        Returns a tuple of message count, consumer count.
+
+        :param queue: Queue name
+        :param passive: Do not create queue
+        :param durable: Request a durable queue
+        :param exclusive: Request an exclusive queue
+        :param auto_delete: Auto-delete queue when unused
+        :param arguments: Arguments for declaration
+        :raises TypeError: if an argument is of the wrong data type
+        :raises ValueError: when an argument fails to validate
+        :raises ~aiorabbit.exceptions.CommandInvalidError:
+            if the sent command is invalid due to an argument value
+        :raises ~aiorabbit.exceptions.ResourceLocked:
+            when a queue is already declared and exclusive is requested
+        :raises ~aiorabbit.exceptions.PreconditionFailed:
+            when a queue is redeclared with a different definition than it
+            currently has
+
+        """
+        if not isinstance(queue, str):
+            raise TypeError('queue must be of type str')
+        elif not isinstance(passive, bool):
+            raise TypeError('passive must be of type bool')
+        elif not isinstance(durable, bool):
+            raise TypeError('durable must be of type bool')
+        elif not isinstance(exclusive, bool):
+            raise TypeError('exclusive must be of type bool')
+        elif not isinstance(auto_delete, bool):
+            raise TypeError('auto_delete must be of type bool')
+        elif arguments and not isinstance(arguments, dict):
+            raise TypeError('arguments must be of type dict')
+        self._write(commands.Queue.Declare(
+            0, queue, passive, durable, exclusive, auto_delete,
+            False, arguments))
+        self._set_state(STATE_QUEUE_DECLARE_SENT)
+        result = await self._wait_on_state(
+            STATE_QUEUE_DECLAREOK_RECEIVED, STATE_CHANNEL_CLOSE_RECEIVED)
+        if result == STATE_CHANNEL_CLOSE_RECEIVED:
+            err_frame = self._last_frame
+            await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
+            raise exceptions.CLASS_MAPPING[err_frame.reply_code](
+                    err_frame.reply_code)
+        return self._last_frame.message_count, self._last_frame.consumer_count
+
+    async def queue_delete(self,
+                           queue: str = '',
+                           if_unused: bool = False,
+                           if_empty: bool = False) -> None:
+        """Delete a queue
+
+        This method deletes a queue. When a queue is deleted any pending
+        messages are sent to a dead-letter queue if this is defined in the
+        server configuration, and all consumers on the queue are cancelled.
+
+        :param queue: Specifies the name of the queue to delete
+        :param if_unused: Delete only if unused
+        :param if_empty: Delete only if empty
+
+        """
+        if not isinstance(queue, str):
+            raise TypeError('queue must be of type str')
+        elif not isinstance(if_unused, bool):
+            raise TypeError('if_unused must be of type bool')
+        elif not isinstance(if_empty, bool):
+            raise TypeError('if_empty must be of type bool')
+        self._write(commands.Queue.Delete(
+            0, queue, if_unused, if_empty, False))
+        self._set_state(STATE_QUEUE_DELETE_SENT)
+        await self._wait_on_state(STATE_QUEUE_DELETEOK_RECEIVED)
+
+    async def queue_purge(self, queue: str = '') -> int:
+        """Purge a queue
+
+        This method removes all messages from a queue which are not awaiting
+        acknowledgment.
+
+        :param queue: Specifies the name of the queue to purge
+        :returns: The quantity of messages purged
+
+        """
+        if not isinstance(queue, str):
+            raise TypeError('queue must be of type str')
+        self._write(commands.Queue.Purge(0, queue, False))
+        self._set_state(STATE_QUEUE_PURGE_SENT)
+        result = await self._wait_on_state(
+            STATE_QUEUE_PURGEOK_RECEIVED, STATE_CHANNEL_CLOSE_RECEIVED)
+        if result == STATE_CHANNEL_CLOSE_RECEIVED:
+            err_frame = self._last_frame
+            await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
+            raise exceptions.CLASS_MAPPING[err_frame.reply_code](
+                err_frame.reply_code)
+        else:
+            return self._last_frame.message_count
+
+    async def queue_unbind(self,
+                           queue: str = '',
+                           exchange: str = '',
+                           routing_key: str = '',
+                           arguments: typing.Optional[FieldTable] = None) \
+            -> None:
+        """Unbind a queue from an exchange
+
+        This method unbinds a queue from an exchange.
+
+        :param queue: Specifies the name of the queue to unbind
+        :param exchange: Name of the exchange to unbind from
+        :param routing_key: Message routing key
+        :param arguments: Arguments of binding
+        :raises TypeError: if an argument is of the wrong data type
+        :raises ValueError: when an argument fails to validate
+        :raises ~aiorabbit.exceptions.CommandInvalidError:
+            if the sent command is invalid due to an argument value
+
+        """
+        if not isinstance(queue, str):
+            raise TypeError('queue must be of type str')
+        elif not isinstance(exchange, str):
+            raise TypeError('exchange must be of type str')
+        elif not isinstance(routing_key, str):
+            raise TypeError('routing_Key must be of type str')
+        elif arguments and not isinstance(arguments, dict):
+            raise TypeError('arguments must be of type dict')
+        self._write(commands.Queue.Unbind(
+            0, queue, exchange, routing_key, arguments))
+        self._set_state(STATE_QUEUE_UNBIND_SENT)
+        await self._wait_on_state(STATE_QUEUE_UNBINDOK_RECEIVED)
+
     def register_channel_close_callback(
             self, callback: typing.Callable) -> None:
         """Register a callback that is invoked when RabbitMQ closes a channel.
@@ -905,6 +1092,7 @@ class Client(state.StateManager):
         LOGGER.debug('Disconnected [%r] (%i) %s', exc, self._state, self.state)
 
     def _on_frame(self, channel: int, value: frame.FrameTypes) -> None:
+        self._last_frame = value
         if channel == 0:
             try:
                 self._channel0.process(value)
@@ -960,6 +1148,16 @@ class Client(state.StateManager):
             self._set_state(STATE_EXCHANGE_DELETEOK_RECEIVED)
         elif isinstance(value, commands.Exchange.UnbindOk):
             self._set_state(STATE_EXCHANGE_UNBINDOK_RECEIVED)
+        elif isinstance(value, commands.Queue.BindOk):
+            self._set_state(STATE_QUEUE_BINDOK_RECEIVED)
+        elif isinstance(value, commands.Queue.DeclareOk):
+            self._set_state(STATE_QUEUE_DECLAREOK_RECEIVED)
+        elif isinstance(value, commands.Queue.DeleteOk):
+            self._set_state(STATE_QUEUE_DELETEOK_RECEIVED)
+        elif isinstance(value, commands.Queue.PurgeOk):
+            self._set_state(STATE_QUEUE_PURGEOK_RECEIVED)
+        elif isinstance(value, commands.Queue.UnbindOk):
+            self._set_state(STATE_QUEUE_UNBINDOK_RECEIVED)
         elif isinstance(value, commands.Tx.SelectOk):
             self._set_state(STATE_TX_SELECTOK_RECEIVED)
         elif isinstance(value, commands.Tx.CommitOk):

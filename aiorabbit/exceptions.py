@@ -10,6 +10,176 @@ class AIORabbitException(Exception):
     """
 
 
+class SoftError(AIORabbitException):
+    """Base exception for all  soft errors."""
+
+
+class HardError(AIORabbitException):
+    """Base exception for all  hard errors."""
+
+
+class ContentTooLarge(SoftError):
+    """The client attempted to transfer content larger than the server could
+    accept at the present time. The client may retry at a later time.
+
+    """
+    name = 'CONTENT-TOO-LARGE'
+    value = 311
+
+
+class NoRoute(SoftError):
+    """Returned when RabbitMQ sends back with 'basic.return' when a 'mandatory'
+    message cannot be delivered to any queue.
+
+    """
+    name = 'NO-ROUTE'
+    value = 312
+
+
+class NoConsumers(SoftError):
+    """When the exchange cannot deliver to a consumer when the immediate flag
+    is set. As a result of pending data on the queue or the absence of any
+    consumers of the queue.
+
+    """
+    name = 'NO-CONSUMERS'
+    value = 313
+
+
+class AccessRefused(SoftError):
+    """The client attempted to work with a server entity to which it has no
+    access due to security settings.
+
+    """
+    name = 'ACCESS-REFUSED'
+    value = 403
+
+
+class NotFound(SoftError):
+    """The client attempted to work with a server entity that does not exist"""
+    name = 'NOT-FOUND'
+    value = 404
+
+
+class ResourceLocked(SoftError):
+    """The client attempted to work with a server entity to which it has no
+    access because another client is working with it.
+
+    """
+    name = 'RESOURCE-LOCKED'
+    value = 405
+
+
+class PreconditionFailed(SoftError):
+    """The client requested a method that was not allowed because some
+    precondition failed.
+
+    """
+    name = 'PRECONDITION-FAILED'
+    value = 406
+
+
+class ConnectionForced(HardError):
+    """An operator intervened to close the connection for some reason. The
+    client may retry at some later date.
+
+    """
+    name = 'CONNECTION-FORCED'
+    value = 320
+
+
+class InvalidPath(HardError):
+    """The client tried to work with an unknown virtual host"""
+    name = 'INVALID-PATH'
+    value = 402
+
+
+class FrameError(HardError):
+    """The sender sent a malformed frame that the recipient could not decode.
+    This strongly implies a programming error in the sending peer.
+
+    """
+    name = 'FRAME-ERROR'
+    value = 501
+
+
+class SyntaxError(HardError):
+    """The sender sent a frame that contained illegal values for one or more
+    fields. This strongly implies a programming error in the sending peer.
+
+    """
+    name = 'SYNTAX-ERROR'
+    value = 502
+
+
+class CommandInvalid(HardError):
+    """The client sent an invalid sequence of frames, attempting to perform an
+    operation that was considered invalid by the server. This usually implies
+    a programming error in the client.
+
+    """
+    name = 'COMMAND-INVALID'
+    value = 503
+
+
+class ChannelError(HardError):
+    """The client attempted to work with a channel that had not been correctly
+    opened. This most likely indicates a fault in the client layer.
+
+    """
+    name = 'CHANNEL-ERROR'
+    value = 504
+
+
+class UnexpectedFrame(HardError):
+    """The peer sent a frame that was not expected, usually in the context of
+    a content header and body.  This strongly indicates a fault in the peer's
+    content processing.
+
+    """
+    name = 'UNEXPECTED-FRAME'
+    value = 505
+
+
+class ResourceError(HardError):
+    """The server could not complete the method because it lacked sufficient
+    resources. This may be due to the client creating too many of some type
+    of entity.
+
+    """
+    name = 'RESOURCE-ERROR'
+    value = 506
+
+
+class NotAllowed(HardError):
+    """The client tried to work with some entity in a manner that is
+    prohibited by the server, due to security settings or by some other
+    criteria.
+
+    """
+    name = 'NOT-ALLOWED'
+    value = 530
+
+
+class NotImplementedOnServer(HardError):
+    """The client tried to use functionality that is not implemented in the
+    server.
+
+    """
+    name = 'NOT-IMPLEMENTED'
+    value = 540
+
+
+class InternalError(HardError):
+    """The server could not complete the method because of an internal error.
+    The server may require intervention by an operator in order to resume
+    normal operations.
+
+    """
+    name = 'INTERNAL-ERROR'
+    value = 541
+
+
 class ClientNegotiationException(AIORabbitException):
     """The client failed to connect to RabbitMQ due to a negotiation error."""
 
@@ -52,20 +222,6 @@ class InvalidRequestError(AIORabbitException):
     """
 
 
-class ExchangeNotFoundError(AIORabbitException):
-    """A command was sent to the server referencing an exchange that does
-    not exist.
-
-    """
-
-
-class CommandInvalidError(AIORabbitException):
-    """The RabbitMQ server responded to a command indicating there was a
-    problem with how it was used.
-
-    """
-
-
 class NoTransactionError(AIORabbitException):
     """Commit or Rollback Invoked without a Transaction
 
@@ -73,3 +229,26 @@ class NoTransactionError(AIORabbitException):
     were invoked without first invoking :meth:`aiorabbit.Client.tx_select`.
 
     """
+
+
+#  Error code to class mapping
+CLASS_MAPPING = {
+    311: ContentTooLarge,
+    312: NoRoute,
+    313: NoConsumers,
+    403: AccessRefused,
+    404: NotFound,
+    405: ResourceLocked,
+    406: PreconditionFailed,
+    320: ConnectionForced,
+    402: InvalidPath,
+    501: FrameError,
+    502: SyntaxError,
+    503: CommandInvalid,
+    504: ChannelError,
+    505: UnexpectedFrame,
+    506: ResourceError,
+    530: NotAllowed,
+    540: NotImplementedOnServer,
+    541: InternalError
+}
