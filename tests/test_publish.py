@@ -4,7 +4,7 @@ import uuid
 
 from pamqp import constants
 
-from aiorabbit import client
+from aiorabbit import client, exceptions
 from . import testing
 
 LOGGER = logging.getLogger(__name__)
@@ -68,10 +68,31 @@ class PublishingArgumentsTestCase(testing.ClientTestCase):
                 'foo', 'bar', b'baz', delivery_mode=3)
 
     @testing.async_test
+    async def test_good_delivery_mode(self):
+        await self.connect()
+        await self.client.confirm_select()
+        result = await self.client.publish('', 'bar', b'baz', delivery_mode=1)
+        self.assertTrue(result)
+
+    @testing.async_test
     async def test_bad_headers(self):
         await self.connect()
         with self.assertRaises(TypeError):
             await self.client.publish('foo', 'bar', b'baz', headers=1)
+
+    @testing.async_test
+    async def test_bad_message_type(self):
+        await self.connect()
+        with self.assertRaises(TypeError):
+            await self.client.publish('foo', 'bar', b'baz', message_type=1)
+
+    @testing.async_test
+    async def test_bad_good(self):
+        await self.connect()
+        await self.client.confirm_select()
+        result = await self.client.publish(
+            '', 'bar', b'baz', message_type='foo')
+        self.assertTrue(result)
 
     @testing.async_test
     async def test_bad_priority(self):
@@ -82,6 +103,13 @@ class PublishingArgumentsTestCase(testing.ClientTestCase):
         with self.assertRaises(ValueError):
             await self.client.publish(
                 'foo', 'bar', b'baz', priority=32768)
+
+    @testing.async_test
+    async def test_good_priority(self):
+        await self.connect()
+        await self.client.confirm_select()
+        result = await self.client.publish('', 'bar', b'baz', priority=5)
+        self.assertTrue(result)
 
     @testing.async_test
     async def test_bad_timestamp(self):
@@ -125,7 +153,6 @@ class PublishingTestCase(testing.ClientTestCase):
 
     @testing.async_test
     async def test_publish_with_bad_exchange(self):
-
         def on_channel_close(reply_code, reply_text):
             self.assertEqual(reply_code, 404)
             self.assertTrue(reply_text.startswith('NOT_FOUND - no exchange'))
@@ -161,4 +188,28 @@ class PublishingTestCase(testing.ClientTestCase):
         await self.client.confirm_select()
         result = await self.client.publish(
             self.exchange, self.routing_key, self.body)
+        self.assertTrue(result)
+
+    @testing.async_test
+    async def test_no_publisher_confirmation_support(self):
+        await self.connect()
+        del self.client._channel0.properties[
+            'capabilities']['publisher_confirms']
+        with self.assertRaises(exceptions.NotSupportedError):
+            await self.client.confirm_select()
+
+    @testing.async_test
+    async def test_publish_bad_exchange_publisher_confirmation(self):
+        await self.connect()
+        await self.client.confirm_select()
+        result = await self.client.publish(
+            self.uuid4(), self.routing_key, self.body)
+        self.assertFalse(result)
+
+    @testing.async_test
+    async def test_publish_publisher_confirmation_mandatory_no_queue(self):
+        await self.connect()
+        await self.client.confirm_select()
+        result = await self.client.publish(
+            '', self.routing_key, self.body, mandatory=True)
         self.assertTrue(result)

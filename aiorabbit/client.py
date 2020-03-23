@@ -298,6 +298,7 @@ _STATE_TRANSITIONS = {
     STATE_CONTENT_BODY_SENT: _IDLE_STATE + [
         STATE_BASIC_ACK_RECEIVED,
         STATE_BASIC_NACK_RECEIVED,
+        STATE_BASIC_REJECT_RECEIVED,
         STATE_BASIC_RETURN_RECEIVED],
     STATE_QOS_SENT: [STATE_CHANNEL_CLOSE_RECEIVED, STATE_QOSOK_RECEIVED],
     STATE_QOSOK_RECEIVED: _IDLE_STATE,
@@ -421,8 +422,6 @@ class Client(state.StateManager):
         :param routing_key: Message routing key
         :param arguments: Arguments for binding
         :raises TypeError: if an argument is of the wrong data type
-        :raises ~aiorabbit.exceptions.CommandInvalidError:
-            if the sent command is invalid due to an argument value
         :raises ~aiorabbit.exceptions.ExchangeNotFoundError:
             if the one of the specified exchanges does not exist
 
@@ -558,10 +557,8 @@ class Client(state.StateManager):
         self._validate_short_str('routing_key', routing_key)
         if not isinstance(message_body, (bytes, str)):
             raise TypeError('message_body must be of types bytes or str')
-        if mandatory is not None:
-            self._validate_bool('mandatory', mandatory)
-        if immediate is not None:
-            self._validate_bool('immediate', immediate)
+        self._validate_bool('mandatory', mandatory)
+        self._validate_bool('immediate', immediate)
         if app_id is not None:
             self._validate_short_str('app_id', app_id)
         if content_encoding is not None:
@@ -649,19 +646,20 @@ class Client(state.StateManager):
                 self._acks.remove(delivery_tag)
                 return True
             elif result == STATE_BASIC_NACK_RECEIVED \
-                    and delivery_tag in self._nacks:
+                    and delivery_tag in self._nacks:  # pragma: nocover
+                """basic.nack will only be delivered if an internal error
+                occurs in the Erlang process responsible for a queue."""
                 self._nacks.remove(delivery_tag)
                 return False
-            elif result == STATE_CHANNEL_CLOSE_RECEIVED:
-                await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
-                return False
+            #  State can only be STATE_CHANNEL_CLOSE_RECEIVED
+            await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
+            return False
 
     @property
     def is_closed(self) -> bool:
         """Indicates if the connection is closed"""
         return self._state in [STATE_CLOSED,
                                STATE_DISCONNECTED,
-                               state.STATE_EXCEPTION,
                                state.STATE_UNINITIALIZED] \
             or not self._transport
 
@@ -819,19 +817,6 @@ class Client(state.StateManager):
             except (exceptions.AIORabbitException,
                     pamqp_exceptions.PAMQPException) as exc:
                 self._set_state(state.STATE_EXCEPTION, exc)
-        elif isinstance(value, commands.Channel.OpenOk):
-            self._set_state(STATE_CHANNEL_OPENOK_RECEIVED)
-        elif isinstance(value, commands.Channel.Close):
-            self._set_state(STATE_CHANNEL_CLOSE_RECEIVED)
-            self._on_channel_closed(value)
-            if self._on_channel_close:
-                self._loop.call_soon(
-                    self._on_channel_close, value.reply_code, value.reply_text)
-        elif isinstance(value, commands.Channel.CloseOk):
-            self._channel_open.clear()
-            self._set_state(STATE_CHANNEL_CLOSEOK_RECEIVED)
-        elif isinstance(value, commands.Confirm.SelectOk):
-            self._set_state(STATE_CONFIRM_SELECTOK_RECEIVED)
         elif isinstance(value, commands.Basic.Ack):
             self._set_state(STATE_BASIC_ACK_RECEIVED)
             LOGGER.debug('Received ack for delivery_tag %i',
@@ -850,8 +835,19 @@ class Client(state.StateManager):
         elif isinstance(value, commands.Basic.Return):
             self._set_state(STATE_BASIC_RETURN_RECEIVED, sticky=True)
             self._message = message.Message(value)
-        elif isinstance(value, commands.Exchange.DeclareOk):
-            self._set_state(STATE_EXCHANGE_DECLAREOK_RECEIVED)
+        elif isinstance(value, commands.Channel.OpenOk):
+            self._set_state(STATE_CHANNEL_OPENOK_RECEIVED)
+        elif isinstance(value, commands.Channel.Close):
+            self._set_state(STATE_CHANNEL_CLOSE_RECEIVED)
+            self._on_channel_closed(value)
+            if self._on_channel_close:
+                self._loop.call_soon(
+                    self._on_channel_close, value.reply_code, value.reply_text)
+        elif isinstance(value, commands.Channel.CloseOk):
+            self._channel_open.clear()
+            self._set_state(STATE_CHANNEL_CLOSEOK_RECEIVED)
+        elif isinstance(value, commands.Confirm.SelectOk):
+            self._set_state(STATE_CONFIRM_SELECTOK_RECEIVED)
         elif isinstance(value, header.ContentHeader):
             self._set_state(STATE_CONTENT_HEADER_RECEIVED)
             self._message.header = value

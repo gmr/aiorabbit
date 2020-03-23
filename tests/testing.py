@@ -4,6 +4,7 @@ import logging
 import os
 import pathlib
 import unittest
+import uuid
 
 from aiorabbit import client
 
@@ -85,8 +86,13 @@ class ClientTestCase(AsyncTestCase):
         self.assert_state(client.STATE_DISCONNECTED, client.STATE_CLOSED)
         await self.client.connect()
         self.assert_state(client.STATE_CHANNEL_OPENOK_RECEIVED)
+        self.assertFalse(self.client.is_closed)
 
     async def close(self):
         LOGGER.debug('Client closing')
         await self.client.close()
         self.assert_state(client.STATE_CLOSED)
+
+    @staticmethod
+    def uuid4() -> str:
+        return str(uuid.uuid4())

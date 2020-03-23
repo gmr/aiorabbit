@@ -215,3 +215,12 @@ class InvalidFrameTestCase(TestCase):
     def test_invalid_frame_raises(self):
         with self.assertRaises(exceptions.AIORabbitException):
             self.channel0.process(commands.Basic.Cancel('foo'))
+
+
+class ResetTestCase(TestCase):
+
+    def test_reset_attributes(self):
+        self.loop.run_until_complete(self.open())
+        self.assertDictEqual(self.channel0.properties, self.server_properties)
+        self.channel0.reset()
+        self.assertDictEqual(self.channel0.properties, {})

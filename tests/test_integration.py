@@ -19,31 +19,43 @@ class ContextManagerTestCase(testing.AsyncTestCase):
     @testing.async_test
     async def test_context_manager_open(self):
         async with aiorabbit.connect(
-                os.environ['RABBITMQ_URI'], loop=self.loop) as _client:
-            await _client.confirm_select()
-            self.assertEqual(_client._state,
+                os.environ['RABBITMQ_URI'], loop=self.loop) as client_:
+            await client_.confirm_select()
+            self.assertEqual(client_._state,
                              client.STATE_CONFIRM_SELECTOK_RECEIVED)
-        self.assertEqual(_client._state, client.STATE_CLOSED)
+        self.assertEqual(client_._state, client.STATE_CLOSED)
 
     @testing.async_test
     async def test_context_manager_exception(self):
         async with aiorabbit.connect(
-                os.environ['RABBITMQ_URI'], loop=self.loop) as _client:
-            await _client.confirm_select()
+                os.environ['RABBITMQ_URI'], loop=self.loop) as client_:
+            await client_.confirm_select()
             with self.assertRaises(RuntimeError):
-                await _client.confirm_select()
-        self.assertEqual(_client._state, client.STATE_CLOSED)
+                await client_.confirm_select()
+        self.assertEqual(client_._state, client.STATE_CLOSED)
 
     @testing.async_test
     async def test_context_manager_remote_close(self):
         async with aiorabbit.connect(
-                os.environ['RABBITMQ_URI'], loop=self.loop) as _client:
+                os.environ['RABBITMQ_URI'], loop=self.loop) as client_:
             LOGGER.debug('Sending admin shutdown frame')
-            _client._on_frame(
+            client_._on_frame(
                 0, commands.Connection.Close(200, 'Admin Shutdown'))
-            while not _client.is_closed:
+            while not client_.is_closed:
                 await asyncio.sleep(0.1)
-        self.assertEqual(_client._state, client.STATE_CLOSED)
+        self.assertEqual(client_._state, client.STATE_CLOSED)
+
+    @testing.async_test
+    async def test_context_manager_already_closed_on_exit(self):
+        async with aiorabbit.connect(
+                os.environ['RABBITMQ_URI'], loop=self.loop) as client_:
+            self.assertFalse(client_.is_closed)
+            client_._state = client.STATE_CLOSED
+        self.assertTrue(client_.is_closed)
+        async with aiorabbit.connect(
+                os.environ['RABBITMQ_URI'], loop=self.loop) as client_:
+            self.assertFalse(client_.is_closed)
+        self.assertTrue(client_.is_closed)
 
 
 class IntegrationTestCase(testing.ClientTestCase):
@@ -227,11 +239,18 @@ class PublishingTestCase(testing.ClientTestCase):
             self.assertEqual(msg.body, self.body)
             self.test_finished.set()
 
-        self.client.register_message_return_callback(on_message_return)
         await self.connect()
+        self.client.register_message_return_callback(on_message_return)
         await self.client.publish(
             self.exchange, self.routing_key, self.body, mandatory=True)
         await self.test_finished.wait()
+
+    @testing.async_test
+    async def test_publish_with_bad_exchange_and_mandatory_no_callback(self):
+        await self.connect()
+        await self.client.publish(
+            self.exchange, self.routing_key, self.body, mandatory=True)
+        await self.client._wait_on_state(client.STATE_BASIC_RETURN_RECEIVED)
 
     @testing.async_test
     async def test_publish_with_confirmation(self):
@@ -243,10 +262,6 @@ class PublishingTestCase(testing.ClientTestCase):
 
 
 class ExchangeTestCase(testing.ClientTestCase):
-
-    @staticmethod
-    def uuid4() -> str:
-        return str(uuid.uuid4())
 
     @testing.async_test
     async def test_exchange_declare(self):
@@ -303,3 +318,24 @@ class ExchangeTestCase(testing.ClientTestCase):
         self.assertEqual(self.client._channel, 2)
         # Ensure a command will properly work after the error
         await self.client.exchange_declare(self.uuid4(), 'direct')
+
+    @testing.async_test
+    async def test_exchange_bind(self):
+        await self.connect()
+        exchange_1 = self.uuid4()
+        exchange_2 = self.uuid4()
+        await self.client.exchange_declare(exchange_1, 'topic')
+        await self.client.exchange_declare(exchange_2, 'topic')
+        await self.client.exchange_bind(exchange_1, exchange_2, '#')
+
+
+class ReconnectPublisherConfirmsTestCase(testing.ClientTestCase):
+
+    @testing.async_test
+    async def test_confirm_select_already_invoked_on_reconnect(self):
+        await self.connect()
+        await self.client.confirm_select()
+        self.assertTrue(self.client._publisher_confirms)
+        with self.assertRaises(exceptions.CommandInvalidError):
+            await self.client.exchange_declare(self.uuid4(), self.uuid4())
+        self.assertTrue(self.client._publisher_confirms)

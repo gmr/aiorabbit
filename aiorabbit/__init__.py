@@ -44,6 +44,7 @@ async def connect(url: str = DEFAULT_URL,
         if not rmq_client.is_closed:
             LOGGER.debug('Closing the client from context manager')
             await rmq_client.close()
+        LOGGER.debug('Client is closed: %r', rmq_client.is_closed)
 
 __all__ = [
     'client',
