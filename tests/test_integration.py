@@ -356,7 +356,7 @@ class ExchangeTestCase(testing.ClientTestCase):
         await self.connect()
         self.assertEqual(self.client._channel, 1)
         await self.client.exchange_unbind(
-                self.uuid4(), self.uuid4(), self.uuid4())
+            self.uuid4(), self.uuid4(), self.uuid4())
         self.assertEqual(self.client._channel, 1)
 
 
