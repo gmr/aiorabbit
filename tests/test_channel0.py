@@ -2,7 +2,6 @@ import asyncio
 import logging
 import platform
 import typing
-import unittest
 from unittest import mock
 import uuid
 
@@ -10,11 +9,12 @@ from pamqp import commands, constants, frame, heartbeat
 from pamqp import exceptions as pamqp_exceptions
 
 from aiorabbit import channel0, exceptions, state, version
+from . import testing
 
 LOGGER = logging.getLogger(__name__)
 
 
-class TestCase(unittest.TestCase):
+class TestCase(testing.AsyncTestCase):
 
     HEARTBEAT_INTERVAL = 10
     SERVER_HEARTBEAT_INTERVAL = 30
@@ -22,6 +22,7 @@ class TestCase(unittest.TestCase):
     SERVER_MAX_CHANNELS = 32768
 
     def setUp(self):
+        super().setUp()
         self.blocked = asyncio.Event()
         self.username = str(uuid.uuid4())
         self.password = str(uuid.uuid4())

@@ -1,9 +1,10 @@
 import asyncio
 import os
+from unittest import mock
 
 from pamqp import base, commands
 
-from aiorabbit import client, state
+from aiorabbit import client, message, state
 from . import testing
 
 
@@ -110,3 +111,61 @@ class TimeoutOnConnectTestCase(testing.ClientTestCase):
     async def test_timeout_error_on_connect_raises(self):
         with self.assertRaises(asyncio.TimeoutError):
             await self.connect()
+
+
+class BasicConsumeTestCase(testing.ClientTestCase):
+
+    @testing.async_test
+    async def test_basic_consume_already_registered(self):
+
+        def on_message(_msg):
+            pass
+
+        await self.connect()
+
+        ctag = self.uuid4()
+        self.client._consumers[ctag] = on_message
+        self.client._state = client.STATE_BASIC_CONSUME_SENT
+        with mock.patch.object(self.client, '_write') as write:
+            write.side_effect = lambda x: self.loop.call_soon(
+                self.client._on_frame, 1, commands.Basic.ConsumeOk(ctag))
+            with self.assertRaises(RuntimeError):
+                await self.client.basic_consume('foo', callback=on_message)
+
+
+class OnBasicDeliverTestCase(testing.ClientTestCase):
+
+    @testing.async_test
+    async def test_on_basic_deliver_raises(self):
+        await self.connect()
+        with self.assertRaises(RuntimeError):
+            self.client._on_basic_deliver(
+                message.Message(commands.Basic.Deliver('foo', 1)))
+
+
+class OnBasicReturnTestCase(testing.ClientTestCase):
+
+    @testing.async_test
+    async def test_on_basic_return_sync(self):
+        await self.connect()
+
+        def on_basic_return(_msg):
+            self.test_finished.set()
+
+        self.client.register_message_return_callback(on_basic_return)
+        self.client._on_basic_return(
+            message.Message(commands.Basic.Return(404, 'Not Found')))
+        await self.test_finished.wait()
+
+    @testing.async_test
+    async def test_async_on_basic_return_async(self):
+        await self.connect()
+
+        async def on_basic_return(_msg):
+            await asyncio.sleep(1)
+            self.test_finished.set()
+
+        self.client.register_message_return_callback(on_basic_return)
+        self.client._on_basic_return(
+            message.Message(commands.Basic.Return(404, 'Not Found')))
+        await self.test_finished.wait()

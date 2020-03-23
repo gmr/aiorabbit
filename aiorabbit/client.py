@@ -93,10 +93,10 @@ STATE_BASIC_NACK_SENT = 0x85
 STATE_BASIC_PUBLISH_SENT = 0x86
 STATE_CONTENT_HEADER_SENT = 0x87
 STATE_CONTENT_BODY_SENT = 0x88
-STATE_QOS_SENT = 0x89
-STATE_QOSOK_RECEIVED = 0x90
-STATE_RECOVER_SENT = 0x91
-STATE_RECOVEROK_RECEIVED = 0x92
+STATE_BASIC_QOS_SENT = 0x89
+STATE_BASIC_QOSOK_RECEIVED = 0x90
+STATE_BASIC_RECOVER_SENT = 0x91
+STATE_BASIC_RECOVEROK_RECEIVED = 0x92
 STATE_BASIC_REJECT_RECEIVED = 0x93
 STATE_BASIC_REJECT_SENT = 0x94
 STATE_BASIC_RETURN_RECEIVED = 0x95
@@ -167,10 +167,10 @@ _STATE_MAP = {
     STATE_BASIC_PUBLISH_SENT: 'Publishing Message',
     STATE_CONTENT_HEADER_SENT: 'Message Content Header sent',
     STATE_CONTENT_BODY_SENT: 'Message Body sent',
-    STATE_QOS_SENT: 'Setting QoS',
-    STATE_QOSOK_RECEIVED: 'QoS set',
-    STATE_RECOVER_SENT: 'Sending recover request',
-    STATE_RECOVEROK_RECEIVED: 'Recover request received',
+    STATE_BASIC_QOS_SENT: 'Setting QoS',
+    STATE_BASIC_QOSOK_RECEIVED: 'QoS set',
+    STATE_BASIC_RECOVER_SENT: 'Sending recover request',
+    STATE_BASIC_RECOVEROK_RECEIVED: 'Recover request received',
     STATE_BASIC_REJECT_RECEIVED: 'Server rejected Message',
     STATE_BASIC_REJECT_SENT: 'Sending Message rejection',
     STATE_BASIC_RETURN_RECEIVED: 'Server returned message',
@@ -181,6 +181,7 @@ _STATE_MAP = {
 
 _IDLE_STATE = [
     STATE_UPDATE_SECRET_SENT,
+    STATE_BASIC_CANCEL_SENT,
     STATE_CHANNEL_CLOSE_RECEIVED,
     STATE_CHANNEL_CLOSE_SENT,
     STATE_CHANNEL_FLOW_RECEIVED,
@@ -201,8 +202,8 @@ _IDLE_STATE = [
     STATE_BASIC_DELIVER_RECEIVED,
     STATE_BASIC_GET_SENT,
     STATE_BASIC_PUBLISH_SENT,
-    STATE_QOS_SENT,
-    STATE_RECOVER_SENT,
+    STATE_BASIC_QOS_SENT,
+    STATE_BASIC_RECOVER_SENT,
     STATE_CLOSING,
     STATE_CLOSED
 ]
@@ -300,16 +301,21 @@ _STATE_TRANSITIONS = {
         STATE_BASIC_NACK_RECEIVED,
         STATE_BASIC_REJECT_RECEIVED,
         STATE_BASIC_RETURN_RECEIVED],
-    STATE_QOS_SENT: [STATE_CHANNEL_CLOSE_RECEIVED, STATE_QOSOK_RECEIVED],
-    STATE_QOSOK_RECEIVED: _IDLE_STATE,
-    STATE_RECOVER_SENT: [STATE_RECOVEROK_RECEIVED],
-    STATE_RECOVEROK_RECEIVED: _IDLE_STATE,
+    STATE_BASIC_QOS_SENT: [
+        STATE_CHANNEL_CLOSE_RECEIVED, STATE_BASIC_QOSOK_RECEIVED],
+    STATE_BASIC_QOSOK_RECEIVED: _IDLE_STATE,
+    STATE_BASIC_RECOVER_SENT: [STATE_BASIC_RECOVEROK_RECEIVED],
+    STATE_BASIC_RECOVEROK_RECEIVED: _IDLE_STATE,
     STATE_BASIC_REJECT_RECEIVED: _IDLE_STATE,
     STATE_BASIC_REJECT_SENT: _IDLE_STATE,
     STATE_BASIC_RETURN_RECEIVED: [STATE_CONTENT_HEADER_RECEIVED],
     STATE_MESSAGE_ASSEMBLED: _IDLE_STATE + [
         STATE_BASIC_ACK_RECEIVED,
-        STATE_BASIC_NACK_RECEIVED
+        STATE_BASIC_ACK_SENT,
+        STATE_BASIC_NACK_SENT,
+        STATE_BASIC_NACK_RECEIVED,
+        STATE_BASIC_REJECT_SENT,
+        STATE_BASIC_REJECT_RECEIVED
     ],
     STATE_CLOSING: [STATE_CLOSED],
     STATE_CLOSED: [STATE_CONNECTING]
@@ -353,6 +359,7 @@ class Client(state.StateManager):
         self._channel: int = 0
         self._channel_open = asyncio.Event()
         self._connected = asyncio.Event()
+        self._consumers: typing.Dict[str, callable] = {}
         self._delivery_tag = 0
         self._defaults = _Defaults(locale, product)
         self._last_frame: typing.Optional[base.Frame] = None
@@ -363,6 +370,7 @@ class Client(state.StateManager):
         self._on_message_return: typing.Optional[typing.Callable] = None
         self._rejects = set({})
         self._transport: typing.Optional[asyncio.Transport] = None
+        self._pending_consumer: typing.Optional[callable] = None
         self._protocol: typing.Optional[asyncio.Protocol] = None
         self._publisher_confirms = False
         self._transactional = False
@@ -391,6 +399,258 @@ class Client(state.StateManager):
                 self._set_state(STATE_CHANNEL_CLOSE_SENT)
                 await self._wait_on_state(STATE_CHANNEL_CLOSEOK_RECEIVED)
         await self._close()
+
+    async def basic_ack(self,
+                        delivery_tag: int,
+                        multiple: bool = False) -> None:
+        """Acknowledge one or more messages
+
+        When sent by the client, this method acknowledges one or more messages
+        delivered via the Deliver or Get-Ok methods. The acknowledgement can be
+        for a single message or a set of messages up to and including a
+        specific message.
+
+        :param delivery_tag: Server-assigned delivery tag
+        :param multiple: Acknowledge multiple messages
+
+        """
+        if not isinstance(delivery_tag, int):
+            raise TypeError('delivery_tag must be of type int')
+        elif not isinstance(multiple, bool):
+            raise TypeError('multiple must be of type bool')
+        self._write(commands.Basic.Ack(delivery_tag, multiple))
+        self._set_state(STATE_BASIC_ACK_SENT)
+
+    async def basic_cancel(self, consumer_tag: str = '') -> None:
+        """End a queue consumer
+
+        This method cancels a consumer. This does not affect already delivered
+        messages, but it does mean the server will not send any more messages
+        for that consumer. The client may receive an arbitrary number of
+        messages in between sending the cancel method and receiving the
+        ``CancelOk`` reply. It may also be sent from the server to the client
+        in the event of the consumer being unexpectedly cancelled (i.e.
+        cancelled for any reason other than the server receiving the
+        corresponding basic.cancel from the client). This allows clients to be
+        notified of the loss of consumers due to events such as queue deletion.
+        Note that as it is not a MUST for clients to accept this method from
+        \the server, it is advisable for the broker to be able to identify
+        those clients that are capable of accepting the method, through some
+        means of capability negotiation.
+
+        :param consumer_tag: Consumer tag
+
+        """
+        if not isinstance(consumer_tag, str):
+            raise TypeError('consumer_tag must be of type str')
+        self._write(commands.Basic.Cancel(consumer_tag))
+        self._set_state(STATE_BASIC_CANCEL_SENT)
+        await self._wait_on_state(STATE_BASIC_CANCELOK_RECEIVED)
+        del self._consumers[consumer_tag]
+
+    async def basic_consume(self,
+                            queue: str = '',
+                            no_local: bool = False,
+                            no_ack: bool = False,
+                            exclusive: bool = False,
+                            arguments: typing.Optional[FieldTable] = None,
+                            callback: typing.Callable = None,
+                            consumer_tag: typing.Optional[str] = None) \
+            -> str:
+        """Start a queue consumer
+
+        This method asks the server to start a “consumer”, which is a transient
+        request for messages from a specific queue. Consumers last as long as
+        the channel they were declared on, or until the client cancels them.
+
+        This method is used for callback passing style usage. For each message,
+        the ``callback`` method will be invoked, passing in an instance of
+        :class:`~pamqp.message.Message`.
+
+        The :meth:`Client.consume <aiorabbit.client.Client.consume>` method
+        should be used for generator style consuming.
+
+        :param queue: Specifies the name of the queue to consume from
+        :param no_local: Do not deliver own messages
+        :param no_ack: No acknowledgement needed
+        :param exclusive: Request exclusive access
+        :param arguments: A set of arguments for the consume. The syntax and
+            semantics of these arguments depends on the server implementation.
+        :param callback: The method to invoke for each received message.
+        :param consumer_tag: Specifies the identifier for the consumer. The
+            consumer tag is local to a channel, so two clients can use the same
+            consumer tags. If this field is empty the server will generate a
+            unique tag.
+        :returns: the consumer tag value
+
+        """
+        if not isinstance(queue, str):
+            raise TypeError('queue must be of type str')
+        elif not isinstance(no_local, bool):
+            raise TypeError('no_local must be of type bool')
+        elif not isinstance(no_ack, bool):
+            raise TypeError('no_ack must be of type bool')
+        elif not isinstance(exclusive, bool):
+            raise TypeError('exclusive must be of type bool')
+        elif arguments and not isinstance(arguments, dict):
+            raise TypeError('arguments must be of type dict')
+        elif callback is None:
+            raise ValueError('callback must be specified')
+        elif not callable(callback):
+            raise TypeError('callback must be a callable')
+        elif consumer_tag is not None and not isinstance(consumer_tag, str):
+            raise TypeError('consumer_tag must be of type str')
+        consumer_tags = list(self._consumers.keys())
+        self._write(commands.Basic.Consume(
+            0, queue, consumer_tag or '', no_local, no_ack, exclusive,
+            False, arguments))
+        self._set_state(STATE_BASIC_CONSUME_SENT)
+        self._pending_consumer = callback
+        result = await self._wait_on_state(
+            STATE_BASIC_CONSUMEOK_RECEIVED, STATE_CHANNEL_CLOSE_RECEIVED)
+        if result == STATE_CHANNEL_CLOSE_RECEIVED:
+            self._pending_consumer = None
+            err_frame = self._last_frame
+            await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
+            raise exceptions.CLASS_MAPPING[err_frame.reply_code](
+                err_frame.reply_code)
+        for consumer_tag, registered_callback in self._consumers.items():
+            if registered_callback == callback \
+                    and consumer_tag not in consumer_tags:
+                return consumer_tag
+        raise RuntimeError('Did not find consumer_tag {}'.format(callback))
+
+    async def basic_get(self, queue: str = '', no_ack: bool = False) \
+            -> typing.Optional[message.Message]:
+        """Direct access to a queue
+
+        This method provides a direct access to the messages in a queue using
+        a synchronous dialogue that is designed for specific types of
+        application where synchronous functionality is more important than
+        performance.
+
+        :param queue: Specifies the name of the queue to get a message from
+        :param no_ack: No acknowledgement needed
+
+        """
+        if not isinstance(queue, str):
+            raise TypeError('queue must be of type str')
+        elif not isinstance(no_ack, bool):
+            raise TypeError('no_ack must be of type bool')
+        self._write(commands.Basic.Get(0, queue, no_ack))
+        self._set_state(STATE_BASIC_GET_SENT)
+        result = await self._wait_on_state(
+            STATE_BASIC_GETEMPTY_RECEIVED, STATE_MESSAGE_ASSEMBLED)
+        if result == STATE_MESSAGE_ASSEMBLED:
+            msg = self._message
+            self._message = None
+            return msg
+
+    async def basic_nack(self,
+                         delivery_tag: int,
+                         multiple: bool = False,
+                         requeue: bool = True) -> None:
+        """Reject one or more incoming messages
+
+        This method allows a client to reject one or more incoming messages.
+        It can be used to interrupt and cancel large incoming messages, or
+        return untreatable messages to their original queue.
+
+        :param delivery_tag: Server-assigned delivery tag
+        :param multiple: Reject multiple messages
+        :param requeue: Requeue the message
+
+        """
+        if not isinstance(delivery_tag, int):
+            raise TypeError('delivery_tag must be of type int')
+        elif not isinstance(multiple, bool):
+            raise TypeError('multiple must be of type bool')
+        elif not isinstance(requeue, bool):
+            raise TypeError('requeue must be of type bool')
+        self._write(commands.Basic.Nack(delivery_tag, multiple, requeue))
+        self._set_state(STATE_BASIC_NACK_SENT)
+
+    async def basic_qos(self,
+                        prefetch_size=0,
+                        prefetch_count=0,
+                        global_=False) -> None:
+        """Specify quality of service.
+
+        This method requests a specific quality of service. The QoS can be
+        specified for the current channel or for all channels on the
+        connection. The particular properties and semantics of a qos method
+        always depend on the content class semantics. Though the qos method
+        could in principle apply to both peers, it is currently meaningful
+        only for the server.
+
+        .. note:: global Redefinition
+
+            RabbitMQ has reinterpreted this field. The original specification
+            said: "By default the QoS settings apply to the current channel
+            only. If this field is set, they are applied to the entire
+            connection." Instead, RabbitMQ takes ``global_ = False`` to mean
+            that the QoS settings should apply per-consumer (for new consumers
+            on the channel; existing ones being unaffected) and
+            ``global_ = True`` to mean that the QoS settings should apply
+            per-channel.
+
+        :param prefetch_size: Prefetch window in octets / bytes
+        :param prefetch_count: Prefetch window in messages
+        :param global_: Apply to entire connection
+
+        """
+        if not isinstance(prefetch_size, int):
+            raise TypeError('prefetch_size must be of type int')
+        elif not isinstance(prefetch_count, int):
+            raise TypeError('prefetch_size must be of type int')
+        elif not isinstance(global_, bool):
+            raise TypeError('global_ must be of type bool')
+        self._write(commands.Basic.Qos(prefetch_size, prefetch_count, global_))
+        self._set_state(STATE_BASIC_QOS_SENT)
+        try:
+            await self._wait_on_state(STATE_BASIC_QOSOK_RECEIVED)
+        except pamqp_exceptions.AMQPNotImplemented as err:
+            raise exceptions.NotImplementedOnServer(str(err))
+
+    async def basic_recover(self, requeue: bool = False) -> None:
+        """Redeliver unacknowledged messages
+
+        This method asks the server to redeliver all unacknowledged messages
+        on a specified channel. Zero or more messages may be redelivered.
+
+        :param requeue: Requeue the message
+        :raises aiorabbit.exceptions.NotImplementedOnServer: when
+            `False` is specified for `requeue`
+
+        """
+        if not isinstance(requeue, bool):
+            raise TypeError('requeue must be of type bool')
+        self._write(commands.Basic.Recover(requeue))
+        self._set_state(STATE_BASIC_RECOVER_SENT)
+        try:
+            await self._wait_on_state(STATE_BASIC_RECOVEROK_RECEIVED)
+        except pamqp_exceptions.AMQPNotImplemented as err:
+            raise exceptions.NotImplementedOnServer(str(err))
+
+    async def basic_reject(self,
+                           delivery_tag: int,
+                           requeue: bool = True) -> None:
+        """Reject an incoming message
+
+        This method allows a client to reject a message. It can be used to
+        interrupt and cancel large incoming messages, or return untreatable
+        messages to their original queue.
+
+        :param delivery_tag: Server-assigned delivery tag
+        :param requeue: Requeue the message
+
+        """
+        if not isinstance(delivery_tag, int):
+            raise TypeError('delivery_tag must be of type int')
+        elif not isinstance(requeue, bool):
+            raise TypeError('requeue must be of type bool')
+        self._write(commands.Basic.Reject(delivery_tag, requeue))
+        self._set_state(STATE_BASIC_REJECT_SENT)
 
     async def confirm_select(self) -> None:
         """Turn on Publisher Confirmations
@@ -916,17 +1176,6 @@ class Client(state.StateManager):
         LOGGER.debug('Registered channel close callback: %r', callback)
         self._on_channel_close = callback
 
-    def register_message_delivery_callback(
-            self, callback: typing.Callable) -> None:
-        """Register a callback that is invoked when RabbitMQ delivers a message
-        that is to be consumed.
-
-        :param callback: The method or function to invoke as a callback
-
-        """
-        LOGGER.debug('Registered message delivery callback: %r', callback)
-        self._on_message_delivery = callback
-
     def register_message_return_callback(
             self, callback: typing.Callable) -> None:
         """Register a callback that is invoked when RabbitMQ returns a
@@ -1104,11 +1353,31 @@ class Client(state.StateManager):
             LOGGER.debug('Received ack for delivery_tag %i',
                          value.delivery_tag)
             self._acks.add(value.delivery_tag)
+        elif isinstance(value, commands.Basic.CancelOk):
+            self._set_state(STATE_BASIC_CANCELOK_RECEIVED)
+        elif isinstance(value, commands.Basic.ConsumeOk):
+            self._set_state(STATE_BASIC_CONSUMEOK_RECEIVED)
+            self._logger.debug('Adding consumer tag %r: %r',
+                               value.consumer_tag, self._pending_consumer)
+            self._consumers[value.consumer_tag] = self._pending_consumer
+            self._pending_consumer = None
+        elif isinstance(value, commands.Basic.Deliver):
+            self._set_state(STATE_BASIC_DELIVER_RECEIVED, sticky=True)
+            self._message = message.Message(value)
+        elif isinstance(value, commands.Basic.GetEmpty):
+            self._set_state(STATE_BASIC_GETEMPTY_RECEIVED)
+        elif isinstance(value, commands.Basic.GetOk):
+            self._set_state(STATE_BASIC_GETOK_RECEIVED, sticky=True)
+            self._message = message.Message(value)
         elif isinstance(value, commands.Basic.Nack):
             self._set_state(STATE_BASIC_NACK_RECEIVED)
             LOGGER.debug('Received nack for delivery_tag %i',
                          value.delivery_tag)
             self._nacks.add(value.delivery_tag)
+        elif isinstance(value, commands.Basic.QosOk):
+            self._set_state(STATE_BASIC_QOSOK_RECEIVED)
+        elif isinstance(value, commands.Basic.RecoverOk):
+            self._set_state(STATE_BASIC_RECOVEROK_RECEIVED)
         elif isinstance(value, commands.Basic.Reject):
             self._set_state(STATE_BASIC_REJECT_RECEIVED)
             LOGGER.debug('Received reject for delivery_tag %i',
@@ -1138,7 +1407,9 @@ class Client(state.StateManager):
             self._message.body_frames.append(value)
             if self._message.complete:
                 self._set_state(STATE_MESSAGE_ASSEMBLED)
-                if STATE_BASIC_RETURN_RECEIVED in self._sticky_state:
+                if STATE_BASIC_DELIVER_RECEIVED in self._sticky_state:
+                    self._on_basic_deliver(self._pop_message())
+                elif STATE_BASIC_RETURN_RECEIVED in self._sticky_state:
                     self._on_basic_return(self._pop_message())
         elif isinstance(value, commands.Exchange.BindOk):
             self._set_state(STATE_EXCHANGE_BINDOK_RECEIVED)
@@ -1168,10 +1439,22 @@ class Client(state.StateManager):
             self._set_state(state.STATE_EXCEPTION,
                             RuntimeError('Unsupported AMQ method'))
 
+    def _on_basic_deliver(self, value: message.Message) -> None:
+        self._clear_sticky_state(STATE_BASIC_DELIVER_RECEIVED)
+        if value.consumer_tag not in self._consumers:
+            raise RuntimeError(
+                'Received message for missing consumer: {}'.format(
+                    value.consumer_tag))
+        possible_future = self._consumers[value.consumer_tag](value)
+        if asyncio.iscoroutine(possible_future):
+            self._loop.call_soon(asyncio.ensure_future, possible_future)
+
     def _on_basic_return(self, value: message.Message) -> None:
         self._clear_sticky_state(STATE_BASIC_RETURN_RECEIVED)
         if self._on_message_return:
-            self._on_message_return(value)
+            possible_future = self._on_message_return(value)
+            if asyncio.iscoroutine(possible_future):
+                self._loop.call_soon(asyncio.ensure_future, possible_future)
 
     def _on_channel_closed(self, value: commands.Channel.Close) -> None:
         LOGGER.info('Channel closed: (%i) %s',

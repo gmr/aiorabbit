@@ -69,6 +69,7 @@ class ClientTestCase(AsyncTestCase):
         super().setUp()
         self.rabbitmq_url = os.environ['RABBITMQ_URI']
         self.client = client.Client(self.rabbitmq_url, loop=self.loop)
+        self.test_finished = asyncio.Event()
 
     def tearDown(self) -> None:
         LOGGER.debug('In ClientTestCase.tearDown')

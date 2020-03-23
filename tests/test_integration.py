@@ -190,7 +190,6 @@ class PublishingTestCase(testing.ClientTestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.test_finished = asyncio.Event()
         self.exchange = ''
         self.routing_key = str(uuid.uuid4())
         self.body = bytes(uuid.uuid4().hex, 'latin-1')
