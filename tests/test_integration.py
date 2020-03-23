@@ -327,6 +327,37 @@ class ExchangeTestCase(testing.ClientTestCase):
         await self.client.exchange_declare(exchange_1, 'topic')
         await self.client.exchange_declare(exchange_2, 'topic')
         await self.client.exchange_bind(exchange_1, exchange_2, '#')
+        await self.client.exchange_unbind(exchange_1, exchange_2, '#')
+        await self.client.exchange_delete(exchange_2)
+        await self.client.exchange_delete(exchange_1)
+
+    @testing.async_test
+    async def test_exchange_delete_invalid_exchange_name(self):
+        await self.connect()
+        self.assertEqual(self.client._channel, 1)
+        with self.assertRaises(TypeError):
+            await self.client.exchange_delete(327687)
+
+    @testing.async_test
+    async def test_exchange_unbind_validation_errors(self):
+        await self.connect()
+        with self.assertRaises(TypeError):
+            await self.client.exchange_unbind(1, self.uuid4(), self.uuid4())
+        with self.assertRaises(TypeError):
+            await self.client.exchange_unbind(self.uuid4(), 1, self.uuid4())
+        with self.assertRaises(TypeError):
+            await self.client.exchange_unbind(self.uuid4(), self.uuid4(), 1)
+        with self.assertRaises(TypeError):
+            await self.client.exchange_unbind(
+                self.uuid4(), self.uuid4(), self.uuid4(), self.uuid4())
+
+    @testing.async_test
+    async def test_exchange_unbind_invalid_exchange(self):
+        await self.connect()
+        self.assertEqual(self.client._channel, 1)
+        await self.client.exchange_unbind(
+                self.uuid4(), self.uuid4(), self.uuid4())
+        self.assertEqual(self.client._channel, 1)
 
 
 class ReconnectPublisherConfirmsTestCase(testing.ClientTestCase):

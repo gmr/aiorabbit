@@ -502,6 +502,55 @@ class Client(state.StateManager):
                 return False
         return True
 
+    async def exchange_delete(self,
+                              exchange: str = '',
+                              if_unused: bool = False) -> None:
+        """Delete an exchange
+
+        This method deletes an exchange. When an exchange is deleted all queue
+        bindings on the exchange are cancelled.
+
+        :param exchange: exchange name
+            - Default: ``''``
+        :param if_unused: Delete only if unused
+            - Default: ``False``
+        :raises ValueError: when an argument fails to validate
+
+        """
+        self._write(commands.Exchange.Delete(0, exchange, if_unused, False))
+        self._set_state(STATE_EXCHANGE_DELETE_SENT)
+        await self._wait_on_state(STATE_EXCHANGE_DELETEOK_RECEIVED)
+
+    async def exchange_unbind(self,
+                              destination: str = '',
+                              source: str = '',
+                              routing_key: str = '',
+                              arguments: typing.Optional[FieldTable] = None) \
+            -> None:
+        """Unbind an exchange from an exchange.
+
+        :param destination: Destination exchange name
+        :param source: Source exchange name
+        :param routing_key: Message routing key
+        :param arguments: Arguments for binding
+        :raises TypeError: if an argument is of the wrong data type
+        :raises ValueError: if an argument value does not validate
+
+        """
+        if not isinstance(destination, str):
+            raise TypeError('destination must be of type str')
+        elif not isinstance(source, str):
+            raise TypeError('source must be of type str')
+        elif not isinstance(routing_key, str):
+            raise TypeError('routing_key must be of type str')
+        elif arguments and not isinstance(arguments, dict):
+            raise TypeError('arguments must be of type dict')
+        self._write(commands.Exchange.Unbind(
+            destination=destination, source=source, routing_key=routing_key,
+            arguments=arguments))
+        self._set_state(STATE_EXCHANGE_UNBIND_SENT)
+        await self._wait_on_state(STATE_EXCHANGE_UNBINDOK_RECEIVED)
+
     async def publish(self,
                       exchange: str = 'amq.direct',
                       routing_key: str = '',
