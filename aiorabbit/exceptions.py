@@ -64,3 +64,12 @@ class CommandInvalidError(AIORabbitException):
     problem with how it was used.
 
     """
+
+
+class NoTransactionError(AIORabbitException):
+    """Commit or Rollback Invoked without a Transaction
+
+    :meth:`aiorabbit.Client.tx_commit` or :meth:`aiorabbit.Client.tx_rollback`
+    were invoked without first invoking :meth:`aiorabbit.Client.tx_select`.
+
+    """
