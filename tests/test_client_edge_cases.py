@@ -1,3 +1,6 @@
+import asyncio
+import os
+
 from pamqp import base, commands
 
 from aiorabbit import client, state
@@ -34,12 +37,13 @@ class ClientCloseTestCase(testing.ClientTestCase):
         self.assertTrue(self.client.is_closed)
 
 
-class TestChannelRotation(testing.ClientTestCase):
+class ChannelRotationTestCase(testing.ClientTestCase):
 
     @testing.async_test
     async def test_channel_exceeds_max_channels(self):
         await self.connect()
-        self.client._write(commands.Channel.Close(200, 'Client Requested'))
+        self.client._write(
+            commands.Channel.Close(200, 'Client Requested', 0, 0))
         self.client._set_state(client.STATE_CHANNEL_CLOSE_SENT)
         await self.client._wait_on_state(client.STATE_CHANNEL_CLOSEOK_RECEIVED)
         self.client._channel = self.client._channel0.max_channels
@@ -47,7 +51,7 @@ class TestChannelRotation(testing.ClientTestCase):
         self.assertEqual(self.client._channel, 1)
 
 
-class TestPopMessage(testing.ClientTestCase):
+class PopMessageTestCase(testing.ClientTestCase):
 
     @testing.async_test
     async def test_channel_exceeds_max_channels(self):
@@ -56,7 +60,7 @@ class TestPopMessage(testing.ClientTestCase):
             self.client._pop_message()
 
 
-class TestBasicNackReceived(testing.ClientTestCase):
+class BasicNackReceivedTestCase(testing.ClientTestCase):
 
     @testing.async_test
     async def test_basic_nack_received(self):
@@ -68,7 +72,7 @@ class TestBasicNackReceived(testing.ClientTestCase):
         self.assertSetEqual(self.client._nacks, {10})
 
 
-class TestBasicRejectReceived(testing.ClientTestCase):
+class BasicRejectReceivedTestCase(testing.ClientTestCase):
 
     @testing.async_test
     async def test_basic_nack_received(self):
@@ -80,7 +84,7 @@ class TestBasicRejectReceived(testing.ClientTestCase):
         self.assertSetEqual(self.client._rejects, {10})
 
 
-class TestUnsupportedFrameOnFrame(testing.ClientTestCase):
+class UnsupportedFrameOnFrameTestCase(testing.ClientTestCase):
 
     @testing.async_test
     async def test_unsupported_frame(self):
@@ -88,3 +92,21 @@ class TestUnsupportedFrameOnFrame(testing.ClientTestCase):
         self.loop.call_soon(self.client._on_frame, 1, base.Frame())
         with self.assertRaises(RuntimeError):
             await self.client._wait_on_state(state.STATE_EXCEPTION)
+
+
+class TimeoutOnConnectTestCase(testing.ClientTestCase):
+
+    def setUp(self) -> None:
+        self._old_uri = os.environ['RABBITMQ_URI']
+        os.environ['RABBITMQ_URI'] = '{}?connection_timeout=0.001'.format(
+            os.environ['RABBITMQ_URI'])
+        super().setUp()
+
+    def tearDown(self) -> None:
+        os.environ['RABBITMQ_URI'] = self._old_uri
+        super().tearDown()
+
+    @testing.async_test
+    async def test_timeout_error_on_connect_raises(self):
+        with self.assertRaises(asyncio.TimeoutError):
+            await self.connect()

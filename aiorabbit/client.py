@@ -384,7 +384,8 @@ class Client(state.StateManager):
             return
         if self._state != state.STATE_EXCEPTION:
             if self._channel_open.is_set():
-                self._write(commands.Channel.Close(200, 'Client Requested'))
+                self._write(
+                    commands.Channel.Close(200, 'Client Requested', 0, 0))
                 self._set_state(STATE_CHANNEL_CLOSE_SENT)
                 await self._wait_on_state(STATE_CHANNEL_CLOSEOK_RECEIVED)
         await self._close()
