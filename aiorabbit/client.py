@@ -723,7 +723,7 @@ class Client(state.StateManager):
                          exchange: str = '',
                          routing_key: str = '',
                          arguments: typing.Optional[FieldTable] = None) \
-        -> None:
+            -> None:
         """Bind queue to an exchange
 
         This method binds a queue to an exchange. Until a queue is bound it
@@ -815,7 +815,7 @@ class Client(state.StateManager):
             err_frame = self._last_frame
             await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
             raise exceptions.CLASS_MAPPING[err_frame.reply_code](
-                    err_frame.reply_code)
+                err_frame.reply_code)
         return self._last_frame.message_count, self._last_frame.consumer_count
 
     async def queue_delete(self,
