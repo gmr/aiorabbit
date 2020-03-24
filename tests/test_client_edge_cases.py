@@ -144,23 +144,6 @@ class InvalidUsernameTestCase(testing.ClientTestCase):
             await self.connect()
 
 
-class InvalidHostnameTestCase(testing.ClientTestCase):
-
-    def setUp(self) -> None:
-        self._old_uri = os.environ['RABBITMQ_URI']
-        os.environ['RABBITMQ_URI'] = \
-            os.environ['RABBITMQ_URI'].replace('localhost', self.uuid4())
-        super().setUp()
-
-    def tearDown(self) -> None:
-        os.environ['RABBITMQ_URI'] = self._old_uri
-        super().tearDown()
-
-    @testing.async_test
-    async def test_error_on_connect_raises(self):
-        await self.connect()
-
-
 class InvalidProtocolTestCase(testing.ClientTestCase):
 
     def setUp(self) -> None:
