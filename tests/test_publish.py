@@ -153,19 +153,11 @@ class PublishingTestCase(testing.ClientTestCase):
 
     @testing.async_test
     async def test_publish_with_bad_exchange(self):
-        def on_channel_close(reply_code, reply_text):
-            self.assertEqual(reply_code, 404)
-            self.assertTrue(reply_text.startswith('NOT_FOUND - no exchange'))
-            self.test_finished.set()
-
         self.exchange = str(uuid.uuid4())
-        self.client.register_channel_close_callback(on_channel_close)
         await self.connect()
         channel = self.client._channel
         await self.client.publish(self.exchange, self.routing_key, self.body)
-        await self.test_finished.wait()
         await self.client._wait_on_state(client.STATE_CHANNEL_OPENOK_RECEIVED)
-
         self.assertEqual(self.client._channel, channel + 1)
 
     @testing.async_test

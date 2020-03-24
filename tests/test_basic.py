@@ -1,5 +1,7 @@
 import uuid
 
+from pamqp import body, commands, header
+
 from aiorabbit import exceptions, message
 from . import testing
 
@@ -130,7 +132,7 @@ class BasicGetTestCase(testing.ClientTestCase):
         queue = self.uuid4()
         exchange = 'amq.direct'
         routing_key = '#'
-        body = uuid.uuid4().bytes
+        msg_body = uuid.uuid4().bytes
         await self.connect()
         msg_count, consumer_count = await self.client.queue_declare(queue)
         self.assertEqual(msg_count, 0)
@@ -138,10 +140,10 @@ class BasicGetTestCase(testing.ClientTestCase):
         result = await self.client.basic_get(queue)
         self.assertIsNone(result)
         await self.client.queue_bind(queue, exchange, routing_key)
-        await self.client.publish(exchange, routing_key, body)
+        await self.client.publish(exchange, routing_key, msg_body)
         result = await self.client.basic_get(queue)
         self.assertIsInstance(result, message.Message)
-        self.assertEqual(result.body, body)
+        self.assertEqual(result.body, msg_body)
         self.assertEqual(result.message_count, 0)
         await self.client.basic_ack(result.delivery_tag)
         await self.client.queue_delete(queue)
@@ -151,20 +153,20 @@ class BasicGetTestCase(testing.ClientTestCase):
         queue = self.uuid4()
         exchange = 'amq.direct'
         routing_key = '#'
-        body = uuid.uuid4().bytes
+        msg_body = uuid.uuid4().bytes
         await self.connect()
         await self.client.queue_declare(queue)
 
         result = await self.client.basic_get(queue)
         self.assertIsNone(result)
         await self.client.queue_bind(queue, exchange, routing_key)
-        await self.client.publish(exchange, routing_key, body)
+        await self.client.publish(exchange, routing_key, msg_body)
         await self.client.publish(exchange, routing_key, uuid.uuid4().bytes)
         await self.client.publish(exchange, routing_key, uuid.uuid4().bytes)
 
         result = await self.client.basic_get(queue)
         self.assertIsInstance(result, message.Message)
-        self.assertEqual(result.body, body)
+        self.assertEqual(result.body, msg_body)
         self.assertEqual(result.message_count, 2)
         await self.client.basic_ack(result.delivery_tag)
 
@@ -256,3 +258,37 @@ class BasicRejectTestCase(testing.ClientTestCase):
             await self.client.basic_reject('foo')
         with self.assertRaises(TypeError):
             await self.client.basic_reject(1, 1)
+
+
+class BasicReturnTestCase(testing.ClientTestCase):
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.exchange = 'amq.topic'
+        self.routing_key = self.uuid4()
+        self.body = uuid.uuid4().bytes
+
+    @testing.async_test
+    async def test_basic_return(self):
+
+        async def on_return(msg: message.Message) -> None:
+            self.assertEqual(msg.reply_code, 404)
+            self.assertEqual(msg.reply_text, 'Not Found')
+            self.assertEqual(msg.exchange, self.exchange)
+            self.assertEqual(msg.body, self.body)
+            self.test_finished.set()
+
+        self.client.register_message_return_callback(on_return)
+
+        await self.connect()
+        await self.client.publish(self.exchange, self.routing_key, self.body)
+
+        # Fake the Basic.Return
+        self.client._on_frame(self.client._channel, commands.Basic.Return(
+            404, 'Not Found', self.exchange, self.routing_key))
+        self.client._on_frame(self.client._channel, header.ContentHeader(
+            0, len(self.body), commands.Basic.Properties()))
+        self.client._on_frame(
+            self.client._channel, body.ContentBody(self.body))
+
+        await self.test_finished.wait()

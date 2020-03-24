@@ -1,5 +1,6 @@
 # coding: utf-8
 import asyncio
+import collections
 import dataclasses
 import datetime
 import decimal
@@ -366,11 +367,11 @@ class Client(state.StateManager):
         self._message: typing.Optional[message.Message] = None
         self._nacks = set({})
         self._on_channel_close: typing.Optional[typing.Callable] = None
-        self._on_message_delivery: typing.Optional[typing.Callable] = None
         self._on_message_return: typing.Optional[typing.Callable] = None
         self._rejects = set({})
         self._transport: typing.Optional[asyncio.Transport] = None
-        self._pending_consumer: typing.Optional[callable] = None
+        self._pending_consumers: \
+            typing.Deque[(asyncio.Future, callable)] = collections.deque([])
         self._protocol: typing.Optional[asyncio.Protocol] = None
         self._publisher_confirms = False
         self._transactional = False
@@ -500,25 +501,23 @@ class Client(state.StateManager):
             raise TypeError('callback must be a callable')
         elif consumer_tag is not None and not isinstance(consumer_tag, str):
             raise TypeError('consumer_tag must be of type str')
-        consumer_tags = list(self._consumers.keys())
         self._write(commands.Basic.Consume(
             0, queue, consumer_tag or '', no_local, no_ack, exclusive,
             False, arguments))
         self._set_state(STATE_BASIC_CONSUME_SENT)
-        self._pending_consumer = callback
+        consumer_tag_future = asyncio.Future()
+        self._pending_consumers.append((consumer_tag_future, callback))
         result = await self._wait_on_state(
             STATE_BASIC_CONSUMEOK_RECEIVED, STATE_CHANNEL_CLOSE_RECEIVED)
         if result == STATE_CHANNEL_CLOSE_RECEIVED:
-            self._pending_consumer = None
+            self._pending_consumers.remove((consumer_tag_future, callback))
             err_frame = self._last_frame
             await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
             raise exceptions.CLASS_MAPPING[err_frame.reply_code](
                 err_frame.reply_code)
-        for consumer_tag, registered_callback in self._consumers.items():
-            if registered_callback == callback \
-                    and consumer_tag not in consumer_tags:
-                return consumer_tag
-        raise RuntimeError('Did not find consumer_tag {}'.format(callback))
+        await consumer_tag_future
+        self._logger.debug('Consumer Tag Future: %r', consumer_tag_future)
+        return consumer_tag_future.result()
 
     async def basic_get(self, queue: str = '', no_ack: bool = False) \
             -> typing.Optional[message.Message]:
@@ -537,14 +536,11 @@ class Client(state.StateManager):
             raise TypeError('queue must be of type str')
         elif not isinstance(no_ack, bool):
             raise TypeError('no_ack must be of type bool')
+        response = asyncio.Future()
+        self._consumers['GetOk'] = response
         self._write(commands.Basic.Get(0, queue, no_ack))
         self._set_state(STATE_BASIC_GET_SENT)
-        result = await self._wait_on_state(
-            STATE_BASIC_GETEMPTY_RECEIVED, STATE_MESSAGE_ASSEMBLED)
-        if result == STATE_MESSAGE_ASSEMBLED:
-            msg = self._message
-            self._message = None
-            return msg
+        return await response
 
     async def basic_nack(self,
                          delivery_tag: int,
@@ -1161,21 +1157,6 @@ class Client(state.StateManager):
         self._set_state(STATE_QUEUE_UNBIND_SENT)
         await self._wait_on_state(STATE_QUEUE_UNBINDOK_RECEIVED)
 
-    def register_channel_close_callback(
-            self, callback: typing.Callable) -> None:
-        """Register a callback that is invoked when RabbitMQ closes a channel.
-
-        :param callback: The method or function to invoke as a callback
-
-        .. note:: This is provided for information purposes only. A connected
-                 :class:`~aiorabbit.client.Client` will automatically create a
-                 new channel when the current channel is closed.
-
-        """
-
-        LOGGER.debug('Registered channel close callback: %r', callback)
-        self._on_channel_close = callback
-
     def register_message_return_callback(
             self, callback: typing.Callable) -> None:
         """Register a callback that is invoked when RabbitMQ returns a
@@ -1334,6 +1315,15 @@ class Client(state.StateManager):
         temp = self._url.query.get('connection_timeout', '3.0')
         return socket.getdefaulttimeout() if temp is None else float(temp)
 
+    def _execute_callback(self, callback: callable, *args) -> None:
+        """Sync wrapper for invoking a sync/async callback and invoking
+        the callback on the IOLoop if it returned a coroutine (async def).
+
+        """
+        result = callback(*args)
+        if asyncio.iscoroutine(result):
+            self._loop.call_soon(asyncio.ensure_future, result)
+
     def _on_connected(self) -> None:
         self._set_state(STATE_CONNECTED)
 
@@ -1357,17 +1347,19 @@ class Client(state.StateManager):
             self._set_state(STATE_BASIC_CANCELOK_RECEIVED)
         elif isinstance(value, commands.Basic.ConsumeOk):
             self._set_state(STATE_BASIC_CONSUMEOK_RECEIVED)
-            self._logger.debug('Adding consumer tag %r: %r',
-                               value.consumer_tag, self._pending_consumer)
-            self._consumers[value.consumer_tag] = self._pending_consumer
-            self._pending_consumer = None
+            future, callback = self._pending_consumers.popleft()
+            self._logger.debug('Adding consumer tag %r: %r (%r)',
+                               value.consumer_tag, callback, future)
+            self._consumers[value.consumer_tag] = callback
+            future.set_result(value.consumer_tag)
         elif isinstance(value, commands.Basic.Deliver):
-            self._set_state(STATE_BASIC_DELIVER_RECEIVED, sticky=True)
+            self._set_state(STATE_BASIC_DELIVER_RECEIVED)
             self._message = message.Message(value)
         elif isinstance(value, commands.Basic.GetEmpty):
             self._set_state(STATE_BASIC_GETEMPTY_RECEIVED)
+            self._consumers['GetOk'].set_result(None)
         elif isinstance(value, commands.Basic.GetOk):
-            self._set_state(STATE_BASIC_GETOK_RECEIVED, sticky=True)
+            self._set_state(STATE_BASIC_GETOK_RECEIVED)
             self._message = message.Message(value)
         elif isinstance(value, commands.Basic.Nack):
             self._set_state(STATE_BASIC_NACK_RECEIVED)
@@ -1384,16 +1376,13 @@ class Client(state.StateManager):
                          value.delivery_tag)
             self._rejects.add(value.delivery_tag)
         elif isinstance(value, commands.Basic.Return):
-            self._set_state(STATE_BASIC_RETURN_RECEIVED, sticky=True)
+            self._set_state(STATE_BASIC_RETURN_RECEIVED)
             self._message = message.Message(value)
         elif isinstance(value, commands.Channel.OpenOk):
             self._set_state(STATE_CHANNEL_OPENOK_RECEIVED)
         elif isinstance(value, commands.Channel.Close):
             self._set_state(STATE_CHANNEL_CLOSE_RECEIVED)
             self._on_channel_closed(value)
-            if self._on_channel_close:
-                self._loop.call_soon(
-                    self._on_channel_close, value.reply_code, value.reply_text)
         elif isinstance(value, commands.Channel.CloseOk):
             self._channel_open.clear()
             self._set_state(STATE_CHANNEL_CLOSEOK_RECEIVED)
@@ -1406,11 +1395,23 @@ class Client(state.StateManager):
             self._set_state(STATE_CONTENT_BODY_RECEIVED)
             self._message.body_frames.append(value)
             if self._message.complete:
+                self._logger.debug('Message completed: %r (%r)',
+                                   self._message, self._message.method)
                 self._set_state(STATE_MESSAGE_ASSEMBLED)
-                if STATE_BASIC_DELIVER_RECEIVED in self._sticky_state:
-                    self._on_basic_deliver(self._pop_message())
-                elif STATE_BASIC_RETURN_RECEIVED in self._sticky_state:
-                    self._on_basic_return(self._pop_message())
+                method = None
+                if isinstance(self._message.method, commands.Basic.Deliver):
+                    method = self._consumers[self._message.consumer_tag]
+                elif isinstance(self._message.method, commands.Basic.GetOk):
+                    self._consumers['GetOk'].set_result(self._pop_message())
+                elif isinstance(self._message.method, commands.Basic.Return):
+                    method = self._on_message_return
+                else:
+                    self._set_state(
+                        state.STATE_EXCEPTION,
+                        RuntimeError('Unsupported message frame'))
+                if method is not None:
+                    self._execute_callback(method, self._pop_message())
+
         elif isinstance(value, commands.Exchange.BindOk):
             self._set_state(STATE_EXCHANGE_BINDOK_RECEIVED)
         elif isinstance(value, commands.Exchange.DeclareOk):
@@ -1438,23 +1439,6 @@ class Client(state.StateManager):
         else:
             self._set_state(state.STATE_EXCEPTION,
                             RuntimeError('Unsupported AMQ method'))
-
-    def _on_basic_deliver(self, value: message.Message) -> None:
-        self._clear_sticky_state(STATE_BASIC_DELIVER_RECEIVED)
-        if value.consumer_tag not in self._consumers:
-            raise RuntimeError(
-                'Received message for missing consumer: {}'.format(
-                    value.consumer_tag))
-        possible_future = self._consumers[value.consumer_tag](value)
-        if asyncio.iscoroutine(possible_future):
-            self._loop.call_soon(asyncio.ensure_future, possible_future)
-
-    def _on_basic_return(self, value: message.Message) -> None:
-        self._clear_sticky_state(STATE_BASIC_RETURN_RECEIVED)
-        if self._on_message_return:
-            possible_future = self._on_message_return(value)
-            if asyncio.iscoroutine(possible_future):
-                self._loop.call_soon(asyncio.ensure_future, possible_future)
 
     def _on_channel_closed(self, value: commands.Channel.Close) -> None:
         LOGGER.info('Channel closed: (%i) %s',
