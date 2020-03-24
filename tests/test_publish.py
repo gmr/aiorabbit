@@ -168,7 +168,7 @@ class PublishingTestCase(testing.ClientTestCase):
             self.assertEqual(msg.body, self.body)
             self.test_finished.set()
 
-        self.client.register_message_return_callback(on_message_return)
+        self.client.register_basic_return_callback(on_message_return)
         await self.connect()
         await self.client.publish(
             self.exchange, self.routing_key, self.body, mandatory=True)
@@ -187,16 +187,16 @@ class PublishingTestCase(testing.ClientTestCase):
         await self.connect()
         del self.client._channel0.properties[
             'capabilities']['publisher_confirms']
-        with self.assertRaises(exceptions.NotSupportedError):
+        with self.assertRaises(exceptions.NotImplemented):
             await self.client.confirm_select()
 
     @testing.async_test
     async def test_publish_bad_exchange_publisher_confirmation(self):
         await self.connect()
         await self.client.confirm_select()
-        result = await self.client.publish(
-            self.uuid4(), self.routing_key, self.body)
-        self.assertFalse(result)
+        with self.assertRaises(exceptions.NotFound):
+            await self.client.publish(
+                self.uuid4(), self.routing_key, self.body)
 
     @testing.async_test
     async def test_publish_publisher_confirmation_mandatory_no_queue(self):

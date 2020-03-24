@@ -27,18 +27,9 @@ class ContentTooLarge(SoftError):
     value = 311
 
 
-class NoRoute(SoftError):
-    """Returned when RabbitMQ sends back with 'basic.return' when a 'mandatory'
-    message cannot be delivered to any queue.
-
-    """
-    name = 'NO-ROUTE'
-    value = 312
-
-
 class NoConsumers(SoftError):
-    """When the exchange cannot deliver to a consumer when the immediate flag
-    is set. As a result of pending data on the queue or the absence of any
+    """When the exchange cannot deliver to a consumer when the ``immediate``
+    flag is set. As a result of pending data on the queue or the absence of any
     consumers of the queue.
 
     """
@@ -161,7 +152,7 @@ class NotAllowed(HardError):
     value = 530
 
 
-class NotImplementedOnServer(HardError):
+class NotImplemented(HardError):
     """The client tried to use functionality that is not implemented in the
     server.
 
@@ -208,13 +199,6 @@ class StateTransitionError(AIORabbitException):
     """
 
 
-class NotSupportedError(AIORabbitException):
-    """Your application attempted to use a feature not supported by the
-    RabbitMQ server.
-
-    """
-
-
 class InvalidRequestError(AIORabbitException):
     """The request violates the AMQ specification, usually by providing a
     value that does not validate according to the spec.
@@ -225,8 +209,10 @@ class InvalidRequestError(AIORabbitException):
 class NoTransactionError(AIORabbitException):
     """Commit or Rollback Invoked without a Transaction
 
-    :meth:`aiorabbit.Client.tx_commit` or :meth:`aiorabbit.Client.tx_rollback`
-    were invoked without first invoking :meth:`aiorabbit.Client.tx_select`.
+    :meth:`~aiorabbit.client.Client.tx_commit` or
+    :meth:`~aiorabbit.client.Client.tx_rollback`
+    were invoked without first invoking
+    :meth:`~aiorabbit.client.Client.tx_select`.
 
     """
 
@@ -234,7 +220,6 @@ class NoTransactionError(AIORabbitException):
 #  Error code to class mapping
 CLASS_MAPPING = {
     311: ContentTooLarge,
-    312: NoRoute,
     313: NoConsumers,
     403: AccessRefused,
     404: NotFound,
@@ -249,6 +234,6 @@ CLASS_MAPPING = {
     505: UnexpectedFrame,
     506: ResourceError,
     530: NotAllowed,
-    540: NotImplementedOnServer,
+    540: NotImplemented,
     541: InternalError
 }

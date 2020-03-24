@@ -37,6 +37,7 @@ Documentation
 
    connect
    api
+   message
    exceptions
    examples
    genindex

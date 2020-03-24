@@ -72,7 +72,7 @@ class TestCase(unittest.TestCase):
                 self.assertEqual(value, expectation)
         self.assertEqual(bytes(self.message), self.body)
         self.assertEqual(len(self.message), len(self.body))
-        self.assertTrue(self.message.complete)
+        self.assertTrue(self.message._is_complete)
 
 
 class BasicDeliverTestCase(TestCase):

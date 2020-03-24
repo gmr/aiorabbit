@@ -8,7 +8,7 @@ from aiorabbit import exceptions
 from aiorabbit.__version__ import version
 
 DEFAULT_LOCALE = 'en-US'
-DEFAULT_PRODUCT = 'aiorabbit'
+DEFAULT_PRODUCT = 'aiorabbit/{}'.format(version)
 DEFAULT_URL = 'amqp://guest:guest@localhost:5672/%2f'
 
 LOGGER = logging.getLogger('aiorabbit')
@@ -19,8 +19,9 @@ async def connect(url: str = DEFAULT_URL,
                   locale: str = DEFAULT_LOCALE,
                   product: str = DEFAULT_PRODUCT,
                   loop: typing.Optional[asyncio.AbstractEventLoop] = None):
-    """Asynchronous context manager that connects to RabbitMQ, returning
-    a connected :class:`~aiorabbit.client.Client` as the target.
+    """Asynchronous :ref:`context-manager <python:typecontextmanager>` that
+    connects to RabbitMQ, returning a connected
+    :class:`~aiorabbit.client.Client` as the target.
 
     .. code-block:: python3
        :caption: Example Usage

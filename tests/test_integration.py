@@ -116,3 +116,21 @@ class ReconnectPublisherConfirmsTestCase(testing.ClientTestCase):
         with self.assertRaises(exceptions.CommandInvalid):
             await self.client.exchange_declare(self.uuid4(), self.uuid4())
         self.assertTrue(self.client._publisher_confirms)
+
+
+
+class QosPrefetchTestCase(testing.ClientTestCase):
+
+    @testing.async_test
+    async def test_basic_qos(self):
+        await self.connect()
+        await self.client.qos_prefetch(100, False)
+        await self.client.qos_prefetch(125, True)
+
+    @testing.async_test
+    async def test_validation_errors(self):
+        await self.connect()
+        with self.assertRaises(TypeError):
+            await self.client.qos_prefetch('foo')
+        with self.assertRaises(TypeError):
+            await self.client.qos_prefetch(0, 'foo')

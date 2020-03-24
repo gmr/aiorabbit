@@ -204,29 +204,21 @@ class BasicNackTestCase(testing.ClientTestCase):
             await self.client.basic_nack(1, False, 1)
 
 
+class BasicPublishTestCase(testing.ClientTestCase):
+
+    @testing.async_test
+    async def test_basic_publish_raises(self):
+        with self.assertRaises(NotImplementedError):
+            await self.client.basic_publish()
+
+
 class BasicQosTestCase(testing.ClientTestCase):
 
     @testing.async_test
-    async def test_basic_qos(self):
-        await self.connect()
-        await self.client.basic_qos(0, 100, False)
-        await self.client.basic_qos(0, 100, True)
-
-    @testing.async_test
-    async def test_basic_qos_sprefetch_size_raises(self):
-        await self.connect()
-        with self.assertRaises(exceptions.NotImplementedOnServer):
-            await self.client.basic_qos(1024, 0, True)
-
-    @testing.async_test
-    async def test_validation_errors(self):
-        await self.connect()
-        with self.assertRaises(TypeError):
-            await self.client.basic_qos('foo')
-        with self.assertRaises(TypeError):
-            await self.client.basic_qos(0, 'foo')
-        with self.assertRaises(TypeError):
-            await self.client.basic_qos(0, 0, 1)
+    async def test_basic_qos_raises(self):
+        self.raises = self.assertRaises(NotImplementedError)
+        with self.raises:
+            await self.client.basic_qos()
 
 
 class BasicRecoverTestCase(testing.ClientTestCase):
@@ -239,7 +231,7 @@ class BasicRecoverTestCase(testing.ClientTestCase):
     @testing.async_test
     async def test_basic_recover_false_raises(self):
         await self.connect()
-        with self.assertRaises(exceptions.NotImplementedOnServer):
+        with self.assertRaises(exceptions.NotImplemented):
             await self.client.basic_recover(False)
 
     @testing.async_test
@@ -278,7 +270,7 @@ class BasicReturnTestCase(testing.ClientTestCase):
             self.assertEqual(msg.body, self.body)
             self.test_finished.set()
 
-        self.client.register_message_return_callback(on_return)
+        self.client.register_basic_return_callback(on_return)
 
         await self.connect()
         await self.client.publish(self.exchange, self.routing_key, self.body)
