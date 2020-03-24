@@ -49,7 +49,8 @@ typehints_document_rtype = True
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 intersphinx_mapping = {'python': ('https://docs.python.org/3', None),
-                       'pamqp': ('https://pamqp.readthedocs.io/en/latest/', None)}
+                       'pamqp': ('https://pamqp.readthedocs.io/en/latest',
+                                 None)}
 
 autodoc_default_options = {'autodoc_typehints': 'description'}
 

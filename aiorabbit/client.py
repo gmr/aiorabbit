@@ -3,7 +3,6 @@ import asyncio
 import collections
 import dataclasses
 import datetime
-import decimal
 import logging
 import math
 import re
@@ -16,23 +15,11 @@ from pamqp import exceptions as pamqp_exceptions
 import yarl
 
 from aiorabbit import (channel0, DEFAULT_LOCALE, DEFAULT_PRODUCT, DEFAULT_URL,
-                       exceptions, message, protocol, state)
+                       exceptions, message, protocol, state, types)
+
+NamePattern = re.compile(r'^[\w:.-]+$', flags=re.UNICODE)
 
 LOGGER = logging.getLogger(__name__)
-
-
-FieldArray = typing.List['FieldValue']  # type: ignore
-FieldTable = typing.Dict[str, 'FieldValue']  # type: ignore
-FieldValue = typing.Union[bool,  # type: ignore
-                          bytearray,
-                          decimal.Decimal,
-                          FieldArray,
-                          FieldTable,
-                          float,
-                          int,
-                          None,
-                          str,
-                          datetime.datetime]
 
 STATE_DISCONNECTED = 0x11
 STATE_CONNECTING = 0x12
@@ -322,11 +309,6 @@ _STATE_TRANSITIONS = {
     STATE_CLOSED: [STATE_CONNECTING]
 }
 
-Arguments = typing.Optional[typing.Dict[str, typing.Any]]
-"""AMQ Method Arguments"""
-
-NamePattern = re.compile(r'^[\w:.-]+$', flags=re.UNICODE)
-
 
 @dataclasses.dataclass()
 class _Defaults:
@@ -482,7 +464,7 @@ class Client(state.StateManager):
         """Contains the negotiated properties for the currently connected
         RabbitMQ Server.
 
-        :rtype: :const:`pamqp.common.FieldTable`
+        :rtype: :const:`FieldTable`
 
         .. code-block:: python
            :caption: Example return value
@@ -507,6 +489,61 @@ class Client(state.StateManager):
         """
         return self._channel0.properties
 
+    async def consume(self,
+                      queue: str = '',
+                      no_local: bool = False,
+                      no_ack: bool = False,
+                      exclusive: bool = False,
+                      arguments: types.Arguments = None) \
+            -> typing.AsyncGenerator[message.Message, None]:
+        """Generator function that consumes from a queue, yielding a
+        :class:`~aiorabbit.message.Message` and automatically cancels when
+        the generator is closed.
+
+        .. seealso:: :pep:`525` for information on Async Generators and
+             :meth:`Client.basic_consume` for callback style consuming.
+
+        :param queue: Specifies the name of the queue to consume from
+        :param no_local: Do not deliver own messages
+        :param no_ack: No acknowledgement needed
+        :param exclusive: Request exclusive access
+        :param arguments: A set of arguments for the consume. The syntax and
+            semantics of these arguments depends on the server implementation.
+        :type arguments: :data:`~aiorabbit.types.Arguments`
+
+        :rtype: typing.AsyncGenerator[aiorabbit.message.Message, None]
+
+        :yields: :class:`aiorabbit.message.Message`
+
+        .. code-block:: python3
+           :caption: Example Usage
+
+            stop_consuming = False
+            consumer = self.client.consume(self.queue)
+            async for msg in consumer:
+                print(msg.body)
+                await self.client.basic_ack(msg.delivery_tag)
+                if stop_consuming:
+                    await consumer.aclose()
+
+        """
+        messages = asyncio.Queue()
+        consumer_tag = await self.basic_consume(
+            queue, no_local, no_ack, exclusive, arguments,
+            lambda m: self._execute_callback(messages.put, m))
+
+        try:
+            while True:
+                msg = await messages.get()
+                yield msg
+        except GeneratorExit:
+            self._logger.debug('Exiting generator for %s', consumer_tag)
+
+        self._write(commands.Basic.Cancel(consumer_tag))
+        self._set_state(STATE_BASIC_CANCEL_SENT)
+        await self._wait_on_state(STATE_BASIC_CANCELOK_RECEIVED)
+        del self._consumers[consumer_tag]
+
     async def publish(self,
                       exchange: str = 'amq.direct',
                       routing_key: str = '',
@@ -519,7 +556,7 @@ class Client(state.StateManager):
                       correlation_id: typing.Optional[str] = None,
                       delivery_mode: typing.Optional[int] = None,
                       expiration: typing.Optional[str] = None,
-                      headers: typing.Optional[FieldTable] = None,
+                      headers: typing.Optional[types.FieldTable] = None,
                       message_id: typing.Optional[str] = None,
                       message_type: typing.Optional[str] = None,
                       priority: typing.Optional[int] = None,
@@ -553,11 +590,12 @@ class Client(state.StateManager):
         :param delivery_mode: Non-persistent (`1`) or persistent (`2`)
         :param expiration: Message expiration specification
         :param headers: Message header field table
+        :type headers: typing.Optional[:data:`~aiorabbit.types.FieldTable`]
         :param message_id: Application message identifier
         :param message_type: Message type name
         :param priority: Message priority, `0` to `9`
         :param reply_to: Address to reply to
-        :param timestamp: Message timestamp
+        :param datetime.datetime timestamp: Message timestamp
         :param user_id: Creating user id
         :raises TypeError: if an argument is of the wrong data type
         :raises ValueError: if the value of one an argument does not validate
@@ -747,7 +785,7 @@ class Client(state.StateManager):
                             no_local: bool = False,
                             no_ack: bool = False,
                             exclusive: bool = False,
-                            arguments: typing.Optional[FieldTable] = None,
+                            arguments: types.Arguments = None,
                             callback: typing.Callable = None,
                             consumer_tag: typing.Optional[str] = None) \
             -> str:
@@ -770,8 +808,9 @@ class Client(state.StateManager):
         :param exclusive: Request exclusive access
         :param arguments: A set of arguments for the consume. The syntax and
             semantics of these arguments depends on the server implementation.
-        :type arguments: :const:`pamqp.common.FieldTable`
+        :type arguments: :data:`~aiorabbit.types.Arguments`
         :param callback: The method to invoke for each received message.
+        :type callback: :class:`~collections.abc.Callable`
         :param consumer_tag: Specifies the identifier for the consumer. The
             consumer tag is local to a channel, so two clients can use the same
             consumer tags. If this field is empty the server will generate a
@@ -789,7 +828,7 @@ class Client(state.StateManager):
             raise TypeError('exclusive must be of type bool')
         elif arguments and not isinstance(arguments, dict):
             raise TypeError('arguments must be of type dict')
-        elif callback is None:
+        if callback is None:
             raise ValueError('callback must be specified')
         elif not callable(callback):
             raise TypeError('callback must be a callable')
@@ -964,7 +1003,7 @@ class Client(state.StateManager):
         """Turn on Publisher Confirmations
 
         :raises RuntimeError: if publisher confirmations are already enabled
-        :raises ~aiorabbit.exceptions.NotImplemented:
+        :raises aiorabbit.exceptions.NotImplemented:
             if publisher confirmations are not available on the RabbitMQ server
 
         """
@@ -987,7 +1026,7 @@ class Client(state.StateManager):
                                durable: bool = False,
                                auto_delete: bool = False,
                                internal: bool = False,
-                               arguments: typing.Optional[FieldTable] = None) \
+                               arguments: types.Arguments = None) \
             -> None:
         """Verify exchange exists, create if needed
 
@@ -1002,10 +1041,11 @@ class Client(state.StateManager):
         :param auto_delete: Auto-delete when unused
         :param internal: Create internal exchange
         :param arguments: Arguments for declaration
+        :type arguments: :data:`~aiorabbit.types.Arguments`
         :raises TypeError: if an argument is of the wrong data type
-        :raises ~aiorabbit.exceptions.NotFound:
+        :raises aiorabbit.exceptions.NotFound:
             if the sent command is invalid due to an argument value
-        :raises ~aiorabbit.exceptions.CommandInvalid:
+        :raises aiorabbit.exceptions.CommandInvalid:
             when an exchange type or other parameter is invalid
         """
         if not isinstance(exchange, str):
@@ -1060,7 +1100,7 @@ class Client(state.StateManager):
                             destination: str = '',
                             source: str = '',
                             routing_key: str = '',
-                            arguments: typing.Optional[FieldTable] = None) \
+                            arguments: types.Arguments = None) \
             -> None:
         """Bind exchange to an exchange.
 
@@ -1068,8 +1108,9 @@ class Client(state.StateManager):
         :param source: Source exchange name
         :param routing_key: Message routing key
         :param arguments: Arguments for binding
+        :type arguments: :data:`~aiorabbit.types.Arguments`
         :raises TypeError: if an argument is of the wrong data type
-        :raises ~aiorabbit.exceptions.NotFound:
+        :raises aiorabbit.exceptions.NotFound:
             if the one of the specified exchanges does not exist
 
         """
@@ -1098,7 +1139,7 @@ class Client(state.StateManager):
                               destination: str = '',
                               source: str = '',
                               routing_key: str = '',
-                              arguments: typing.Optional[FieldTable] = None) \
+                              arguments: types.Arguments = None) \
             -> None:
         """Unbind an exchange from an exchange.
 
@@ -1106,6 +1147,7 @@ class Client(state.StateManager):
         :param source: Source exchange name
         :param routing_key: Message routing key
         :param arguments: Arguments for binding
+        :type arguments: :data:`~aiorabbit.types.Arguments`
         :raises TypeError: if an argument is of the wrong data type
         :raises ValueError: if an argument value does not validate
 
@@ -1130,7 +1172,7 @@ class Client(state.StateManager):
                             durable: bool = False,
                             exclusive: bool = False,
                             auto_delete: bool = False,
-                            arguments: typing.Optional[FieldTable] = None) \
+                            arguments: types.Arguments = None) \
             -> typing.Tuple[int, int]:
         """Declare queue, create if needed
 
@@ -1146,13 +1188,12 @@ class Client(state.StateManager):
         :param exclusive: Request an exclusive queue
         :param auto_delete: Auto-delete queue when unused
         :param arguments: Arguments for declaration
+        :type arguments: :data:`~aiorabbit.types.Arguments`
         :raises TypeError: if an argument is of the wrong data type
         :raises ValueError: when an argument fails to validate
-        :raises ~aiorabbit.exceptions.CommandInvalid:
-            if the sent command is invalid due to an argument value
-        :raises ~aiorabbit.exceptions.ResourceLocked:
+        :raises aiorabbit.exceptions.ResourceLocked:
             when a queue is already declared and exclusive is requested
-        :raises ~aiorabbit.exceptions.PreconditionFailed:
+        :raises aiorabbit.exceptions.PreconditionFailed:
             when a queue is redeclared with a different definition than it
             currently has
 
@@ -1212,8 +1253,7 @@ class Client(state.StateManager):
                          queue: str = '',
                          exchange: str = '',
                          routing_key: str = '',
-                         arguments: typing.Optional[FieldTable] = None) \
-            -> None:
+                         arguments: types.Arguments = None) -> None:
         """Bind queue to an exchange
 
         This method binds a queue to an exchange. Until a queue is bound it
@@ -1225,10 +1265,9 @@ class Client(state.StateManager):
         :param exchange: Name of the exchange to bind to
         :param routing_key: Message routing key
         :param arguments: Arguments of binding
+        :type arguments: :data:`~aiorabbit.types.Arguments`
         :raises TypeError: if an argument is of the wrong data type
         :raises ValueError: when an argument fails to validate
-        :raises ~aiorabbit.exceptions.CommandInvalid:
-            if the sent command is invalid due to an argument value
 
         """
         if not isinstance(queue, str):
@@ -1254,8 +1293,7 @@ class Client(state.StateManager):
                            queue: str = '',
                            exchange: str = '',
                            routing_key: str = '',
-                           arguments: typing.Optional[FieldTable] = None) \
-            -> None:
+                           arguments: types.Arguments = None) -> None:
         """Unbind a queue from an exchange
 
         This method unbinds a queue from an exchange.
@@ -1264,10 +1302,9 @@ class Client(state.StateManager):
         :param exchange: Name of the exchange to unbind from
         :param routing_key: Message routing key
         :param arguments: Arguments of binding
+        :type arguments: :data:`~aiorabbit.types.Arguments`
         :raises TypeError: if an argument is of the wrong data type
         :raises ValueError: when an argument fails to validate
-        :raises ~aiorabbit.exceptions.CommandInvalidError:
-            if the sent command is invalid due to an argument value
 
         """
         if not isinstance(queue, str):
@@ -1440,12 +1477,12 @@ class Client(state.StateManager):
         elif isinstance(value, commands.Basic.CancelOk):
             self._set_state(STATE_BASIC_CANCELOK_RECEIVED)
         elif isinstance(value, commands.Basic.ConsumeOk):
-            self._set_state(STATE_BASIC_CONSUMEOK_RECEIVED)
             future, callback = self._pending_consumers.popleft()
+            future.set_result(value.consumer_tag)
             self._logger.debug('Adding consumer tag %r: %r (%r)',
                                value.consumer_tag, callback, future)
             self._consumers[value.consumer_tag] = callback
-            future.set_result(value.consumer_tag)
+            self._set_state(STATE_BASIC_CONSUMEOK_RECEIVED)
         elif isinstance(value, commands.Basic.Deliver):
             self._set_state(STATE_BASIC_DELIVER_RECEIVED)
             self._message = message.Message(value)
@@ -1488,7 +1525,7 @@ class Client(state.StateManager):
         elif value.name == 'ContentBody':
             self._set_state(STATE_CONTENT_BODY_RECEIVED)
             self._message.body_frames.append(value)
-            if self._message._is_complete:
+            if self._message.is_complete:
                 self._logger.debug('Message completed: %r (%r)',
                                    self._message, self._message.method)
                 self._set_state(STATE_MESSAGE_ASSEMBLED)

@@ -1,4 +1,4 @@
-pamqp>=3.0.0a4,<4
+pamqp>=3.0.0a6,<4
 Sphinx==2.4.4
 sphinx-autodoc-typehints
 sphinx-material==0.0.23

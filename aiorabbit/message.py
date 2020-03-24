@@ -173,6 +173,6 @@ class Message:
         return b''.join([b.value for b in self.body_frames])
 
     @property
-    def _is_complete(self):
-        """Used when receiving frames from RabbitMQ"""
+    def is_complete(self):
+        #  Used when receiving frames from RabbitMQ
         return len(self) == self.header.body_size

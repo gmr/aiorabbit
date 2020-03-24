@@ -118,7 +118,6 @@ class ReconnectPublisherConfirmsTestCase(testing.ClientTestCase):
         self.assertTrue(self.client._publisher_confirms)
 
 
-
 class QosPrefetchTestCase(testing.ClientTestCase):
 
     @testing.async_test
@@ -134,3 +133,36 @@ class QosPrefetchTestCase(testing.ClientTestCase):
             await self.client.qos_prefetch('foo')
         with self.assertRaises(TypeError):
             await self.client.qos_prefetch(0, 'foo')
+
+
+class ConsumeTestCase(testing.ClientTestCase):
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.queue = self.uuid4()
+        self.exchange = 'amq.topic'
+
+    @testing.async_test
+    async def test_consume(self):
+        await self.connect()
+        await self.client.queue_declare(self.queue)
+        await self.client.queue_bind(self.queue, self.exchange, '#')
+        await self.client.qos_prefetch(1, True)
+        messages = [self.uuid4().encode('utf-8') for _offset in range(0, 5)]
+        for message in messages:
+            await self.client.publish(self.exchange, self.queue, message)
+
+        msgs, _consumers = await self.client.queue_declare(self.queue)
+        while msgs < len(messages):
+            await asyncio.sleep(0.5)
+            msgs, consumers = await self.client.queue_declare(self.queue)
+
+        consumer = self.client.consume(self.queue)
+        async for message in consumer:
+            messages.remove(message.body)
+            await self.client.basic_ack(message.delivery_tag)
+            if not messages:
+                await consumer.aclose()
+
+        msgs, _consumers = await self.client.queue_declare(self.queue)
+        self.assertEqual(msgs, 0)
