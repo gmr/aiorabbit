@@ -30,7 +30,6 @@ class StateManager:
         self._loop.set_exception_handler(self._on_exception)
         self._state: int = STATE_UNINITIALIZED
         self._state_start: float = self._loop.time()
-        self._sticky_state = set({})
         self._waits: dict = {}
         self._waiting: int = 0
 
@@ -53,12 +52,6 @@ class StateManager:
         """Return how long the current state has been active"""
         return self._loop.time() - self._state_start
 
-    def _clear_sticky_state(self, value: int) -> None:
-        try:
-            self._sticky_state.remove(value)
-        except KeyError:
-            pass
-
     def _clear_waits(self, wait_id: int) -> None:
         for state in self._waits.keys():
             if wait_id in self._waits[state].keys():
@@ -80,8 +73,7 @@ class StateManager:
         self._waits = {}
 
     def _set_state(self, value: int,
-                   exc: typing.Optional[Exception] = None,
-                   sticky: bool = False) -> None:
+                   exc: typing.Optional[Exception] = None) -> None:
         self._logger.debug(
             'Set state %r (%r) while state is %r with %i waiting',
             self.state_description(value), exc, self.state, self._waiting)
@@ -98,13 +90,11 @@ class StateManager:
                         self.state, self.state_description(value)))
             else:
                 self._logger.debug(
-                    'Transition to %r (%i) from %r (%i) after %.4f seconds '
-                    '(Sticky: %r)', self.state_description(value), value,
-                    self.state, self._state, self.time_in_state, sticky)
+                    'Transition to %r (%i) from %r (%i) after %.4f seconds',
+                    self.state_description(value), value,
+                    self.state, self._state, self.time_in_state)
                 self._state = value
                 self._state_start = self._loop.time()
-                if sticky:
-                    self._sticky_state.add(value)
         if self._state in self._waits:
             [self._loop.call_soon(event.set)
              for event in self._waits[self._state].values()]
