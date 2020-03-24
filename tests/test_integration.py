@@ -4,7 +4,6 @@ import os
 from unittest import mock
 
 from pamqp import commands
-from pamqp import exceptions as pamqp_exceptions
 
 import aiorabbit
 from aiorabbit import client, exceptions
@@ -99,7 +98,7 @@ class IntegrationTestCase(testing.ClientTestCase):
     @testing.async_test
     async def test_update_secret_raises(self):
         await self.connect()
-        with self.assertRaises(pamqp_exceptions.AMQPCommandInvalid):
+        with self.assertRaises(exceptions.CommandInvalid):
             self.client._write(
                 commands.Connection.UpdateSecret('foo', 'bar'))
             await self.client._wait_on_state(

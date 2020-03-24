@@ -11,7 +11,6 @@ import typing
 from urllib import parse
 
 from pamqp import base, body, commands, frame, header
-from pamqp import exceptions as pamqp_exceptions
 import yarl
 
 from aiorabbit import (channel0, DEFAULT_LOCALE, DEFAULT_PRODUCT, DEFAULT_URL,
@@ -1011,7 +1010,7 @@ class Client(state.StateManager):
         self._set_state(STATE_BASIC_RECOVER_SENT)
         try:
             await self._wait_on_state(STATE_BASIC_RECOVEROK_RECEIVED)
-        except pamqp_exceptions.AMQPNotImplemented as err:
+        except exceptions.NotImplemented as err:
             raise exceptions.NotImplemented(str(err))
 
     async def confirm_select(self) -> None:
@@ -1080,12 +1079,9 @@ class Client(state.StateManager):
             durable=durable, auto_delete=auto_delete, internal=internal,
             arguments=arguments))
         self._set_state(STATE_EXCHANGE_DECLARE_SENT)
-        try:
-            result = await self._wait_on_state(
-                STATE_CHANNEL_CLOSE_RECEIVED,
-                STATE_EXCHANGE_DECLAREOK_RECEIVED)
-        except pamqp_exceptions.AMQPCommandInvalid as err:
-            raise exceptions.CommandInvalid(str(err))
+        result = await self._wait_on_state(
+            STATE_CHANNEL_CLOSE_RECEIVED,
+            STATE_EXCHANGE_DECLAREOK_RECEIVED)
         if result == STATE_CHANNEL_CLOSE_RECEIVED:
             err_frame = self._last_frame
             await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
@@ -1483,8 +1479,7 @@ class Client(state.StateManager):
         if channel == 0:
             try:
                 self._channel0.process(value)
-            except (exceptions.AIORabbitException,
-                    pamqp_exceptions.PAMQPException) as exc:
+            except exceptions.AIORabbitException as exc:
                 self._set_state(state.STATE_EXCEPTION, exc)
         elif isinstance(value, commands.Basic.Ack):
             self._set_state(STATE_BASIC_ACK_RECEIVED)
@@ -1682,7 +1677,7 @@ class Client(state.StateManager):
     async def _wait_on_state(self, *args) -> int:
         try:
             result = await super()._wait_on_state(*args)
-        except pamqp_exceptions.AMQPError as exc:
+        except exceptions.AIORabbitException as exc:
             LOGGER.warning('Exception raised while waiting: %s (%i) %s',
                            exc, self._state, self.state)
             await self._reconnect()

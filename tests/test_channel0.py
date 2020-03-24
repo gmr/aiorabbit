@@ -140,7 +140,7 @@ class RemoteCloseTestCase(TestCase):
 
     def test_with_invalid_path(self):
         self.loop.run_until_complete(self.open())
-        with self.assertRaises(pamqp_exceptions.AMQPInvalidPath):
+        with self.assertRaises(exceptions.InvalidPath):
             self.channel0.process(
                 commands.Connection.Close(402, 'INVALID-PATH'))
         self.assert_state(state.STATE_EXCEPTION)
