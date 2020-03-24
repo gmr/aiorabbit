@@ -5,7 +5,6 @@ import platform
 import typing
 
 from pamqp import commands, constants, frame, header, heartbeat
-from pamqp import exceptions as pamqp_exceptions
 
 from aiorabbit import exceptions, state
 from aiorabbit.__version__ import version
@@ -73,9 +72,9 @@ _STATE_TRANSITIONS = {
     state.STATE_EXCEPTION: [STATE_CLOSE_SENT],
     STATE_PROTOCOL_HEADER_SENT: [STATE_START_RECEIVED],
     STATE_START_RECEIVED: [STATE_START_OK_SENT, STATE_CLOSED],
-    STATE_START_OK_SENT: [STATE_TUNE_RECEIVED],
+    STATE_START_OK_SENT: [STATE_TUNE_RECEIVED, STATE_CLOSE_RECEIVED],
     STATE_TUNE_RECEIVED: [STATE_TUNE_OK_SENT, STATE_CLOSED],
-    STATE_TUNE_OK_SENT: [STATE_OPEN_SENT],
+    STATE_TUNE_OK_SENT: [STATE_OPEN_SENT, STATE_CLOSE_RECEIVED],
     STATE_OPEN_SENT: [STATE_OPEN_OK_RECEIVED],
     STATE_OPEN_OK_RECEIVED: [
         STATE_BLOCKED_RECEIVED,
@@ -211,11 +210,10 @@ class Channel0(state.StateManager):
         if value.reply_code < 300:
             self._set_state(STATE_CLOSE_OK_SENT)
             self.on_remote_close(value.reply_code, None)
-        elif value.reply_code in pamqp_exceptions.CLASS_MAPPING:
+        elif value.reply_code in exceptions.CLASS_MAPPING:
             self._set_state(
                 STATE_CLOSE_OK_SENT,
-                pamqp_exceptions.CLASS_MAPPING[value.reply_code](
-                    value.reply_text))
+                exceptions.CLASS_MAPPING[value.reply_code](value.reply_text))
             self.on_remote_close(value.reply_code, self._exception)
         else:
             self._set_state(

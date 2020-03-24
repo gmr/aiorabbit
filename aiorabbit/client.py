@@ -407,8 +407,23 @@ class Client(state.StateManager):
             client = Client(RABBITMQ_URL)
             await client.connect()
 
+        :raises asyncio.TimeoutError: on connection timeout
+        :raises OSError: when a networking error occurs
+        :raises aiorabbit.exceptions.AccessRefused:
+            when authentication or authorization fails
+        :raises aiorabbit.exceptions.ClientNegotiationException:
+            when the client fails to negotiate with the server
+
         """
-        await self._connect()
+        try:
+            await self._connect()
+        except (asyncio.TimeoutError,
+                OSError,
+                exceptions.AccessRefused,
+                exceptions.ClientNegotiationException) as exc:
+            self._reset()
+            self._logger.critical('Failed to connect to RabbitMQ: %s', exc)
+            raise exc
         await self._open_channel()
 
     async def close(self) -> None:
@@ -1439,6 +1454,8 @@ class Client(state.StateManager):
         else:
             self._max_frame_size = float(self._channel0.max_frame_size)
             await self._channel0.open(self._transport)
+            if self._state == state.STATE_EXCEPTION:
+                raise self._exception
             self._set_state(STATE_OPENED)
 
     @property

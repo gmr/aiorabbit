@@ -3,7 +3,7 @@ import os
 
 from pamqp import base, body, commands, header
 
-from aiorabbit import client, message, state
+from aiorabbit import client, exceptions, message, state
 from . import testing
 
 
@@ -123,4 +123,58 @@ class TimeoutOnConnectTestCase(testing.ClientTestCase):
     @testing.async_test
     async def test_timeout_error_on_connect_raises(self):
         with self.assertRaises(asyncio.TimeoutError):
+            await self.connect()
+
+
+class InvalidUsernameTestCase(testing.ClientTestCase):
+
+    def setUp(self) -> None:
+        self._old_uri = os.environ['RABBITMQ_URI']
+        os.environ['RABBITMQ_URI'] = \
+            os.environ['RABBITMQ_URI'].replace('guest', 'foo')
+        super().setUp()
+
+    def tearDown(self) -> None:
+        os.environ['RABBITMQ_URI'] = self._old_uri
+        super().tearDown()
+
+    @testing.async_test
+    async def test_error_on_connect_raises(self):
+        with self.assertRaises(exceptions.AccessRefused):
+            await self.connect()
+
+
+class InvalidHostnameTestCase(testing.ClientTestCase):
+
+    def setUp(self) -> None:
+        self._old_uri = os.environ['RABBITMQ_URI']
+        os.environ['RABBITMQ_URI'] = \
+            os.environ['RABBITMQ_URI'].replace('localhost', self.uuid4())
+        super().setUp()
+
+    def tearDown(self) -> None:
+        os.environ['RABBITMQ_URI'] = self._old_uri
+        super().tearDown()
+
+    @testing.async_test
+    async def test_error_on_connect_raises(self):
+        with self.assertRaises(OSError):
+            await self.connect()
+
+
+class InvalidProtocolTestCase(testing.ClientTestCase):
+
+    def setUp(self) -> None:
+        self._old_uri = os.environ['RABBITMQ_URI']
+        os.environ['RABBITMQ_URI'] = \
+            os.environ['RABBITMQ_URI'].replace('amqp', 'amqps')
+        super().setUp()
+
+    def tearDown(self) -> None:
+        os.environ['RABBITMQ_URI'] = self._old_uri
+        super().tearDown()
+
+    @testing.async_test
+    async def test_error_on_connect_raises(self):
+        with self.assertRaises(OSError):
             await self.connect()
