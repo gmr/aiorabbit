@@ -6,7 +6,6 @@ from unittest import mock
 import uuid
 
 from pamqp import commands, constants, frame, heartbeat
-from pamqp import exceptions as pamqp_exceptions
 
 from aiorabbit import channel0, exceptions, state, version
 from . import testing
