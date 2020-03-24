@@ -149,7 +149,7 @@ class InvalidHostnameTestCase(testing.ClientTestCase):
     def setUp(self) -> None:
         self._old_uri = os.environ['RABBITMQ_URI']
         os.environ['RABBITMQ_URI'] = \
-            os.environ['RABBITMQ_URI'].replace('localhost', self.uuid4())
+            os.environ['RABBITMQ_URI'].replace('localhost', '255.255.255.255')
         super().setUp()
 
     def tearDown(self) -> None:
