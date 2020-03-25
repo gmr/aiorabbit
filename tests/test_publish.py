@@ -33,10 +33,9 @@ class PublishingArgumentsTestCase(testing.ClientTestCase):
     @testing.async_test
     async def test_bad_booleans(self):
         await self.connect()
-        for field in ['mandatory', 'immediate']:
-            with self.assertRaises(TypeError):
-                kwargs = {field: 'qux'}
-                await self.client.publish('foo', 'bar', b'baz', **kwargs)
+        with self.assertRaises(TypeError):
+            kwargs = {'mandatory': 'qux'}
+            await self.client.publish('foo', 'bar', b'baz', **kwargs)
 
     @testing.async_test
     async def test_bad_strs(self):

@@ -109,8 +109,8 @@ _STATE_MAP = {
     STATE_CHANNEL_CLOSEOK_SENT: 'Channel CloseOk Sent',
     STATE_CHANNEL_FLOW_RECEIVED: 'Channel Flow Received',
     STATE_CHANNEL_FLOWOK_SENT: 'Channel FlowOk Sent',
-    STATE_CONFIRM_SELECT_SENT: 'Enabling Publisher Confirmations',
-    STATE_CONFIRM_SELECTOK_RECEIVED: 'Publisher Confirmations Enabled',
+    STATE_CONFIRM_SELECT_SENT: 'Enabling Publisher Confirms',
+    STATE_CONFIRM_SELECTOK_RECEIVED: 'Publisher Confirms Enabled',
     STATE_EXCHANGE_BIND_SENT: 'Binding Exchange',
     STATE_EXCHANGE_BINDOK_RECEIVED: 'Exchange Bound',
     STATE_EXCHANGE_DECLARE_SENT: 'Declaring Exchange',
@@ -563,7 +563,6 @@ class Client(state.StateManager):
                       routing_key: str = '',
                       message_body: typing.Union[bytes, str] = b'',
                       mandatory: bool = False,
-                      immediate: bool = False,
                       app_id: typing.Optional[str] = None,
                       content_encoding: typing.Optional[str] = None,
                       content_type: typing.Optional[str] = None,
@@ -584,7 +583,7 @@ class Client(state.StateManager):
         it is a :class:`str`, it will be encoded to a :class:`bytes` instance
         using ``UTF-8`` encoding.
 
-        If publisher confirmations are enabled, will return `True` or `False`
+        If publisher confirms are enabled, will return `True` or `False`
         indicating success or failure.
 
         .. seealso::
@@ -592,11 +591,19 @@ class Client(state.StateManager):
             :meth:`Client.confirm_select` for enabling publisher confirmation
             of published messages.
 
+        .. note::
+
+            The ``immediate`` flag is not offered as it is not implemented in
+            RabbitMQ as of this time. See ``basic / publish`` in the
+            "Methods from the AMQP specification, version 0-9-1" table
+            in RabbitMQ's `Compatibility and Conformance
+            <https://www.rabbitmq.com/specification.html#methods>`_ page for
+            more information.
+
         :param exchange: The exchange to publish to. Default: `amq.direct`
         :param routing_key: The routing key to publish with. Default: ``
         :param message_body: The message body to publish. Default: ``
         :param mandatory: Indicate mandatory routing. Default: `False`
-        :param immediate: Request immediate delivery. Default: `False`
         :param app_id: Creating application id
         :param content_type: MIME content type
         :param content_encoding: MIME content encoding
@@ -613,7 +620,7 @@ class Client(state.StateManager):
         :param user_id: Creating user id
         :raises TypeError: if an argument is of the wrong data type
         :raises ValueError: if the value of one an argument does not validate
-        :raises aiorabbit.exceptions.NotFound: When publisher confirmations are
+        :raises aiorabbit.exceptions.NotFound: When publisher confirms are
             enabled and mandatory is set and the exchange that is being
             published to does not exist.
 
@@ -623,7 +630,6 @@ class Client(state.StateManager):
         if not isinstance(message_body, (bytes, str)):
             raise TypeError('message_body must be of types bytes or str')
         self._validate_bool('mandatory', mandatory)
-        self._validate_bool('immediate', immediate)
         if app_id is not None:
             self._validate_short_str('app_id', app_id)
         if content_encoding is not None:
@@ -668,8 +674,7 @@ class Client(state.StateManager):
                      delivery_tag, exchange, routing_key)
 
         self._write(commands.Basic.Publish(
-            exchange=exchange, routing_key=routing_key, mandatory=mandatory,
-            immediate=immediate))
+            exchange=exchange, routing_key=routing_key, mandatory=mandatory))
         self._set_state(STATE_BASIC_PUBLISH_SENT)
 
         body_size = len(message_body)
@@ -1014,19 +1019,29 @@ class Client(state.StateManager):
             raise exceptions.NotImplemented(str(err))
 
     async def confirm_select(self) -> None:
-        """Turn on Publisher Confirmations
+        """Enable `Publisher Confirms
+        <https://www.rabbitmq.com/confirms.html>`_
 
-        :raises RuntimeError: if publisher confirmations are already enabled
+        .. warning::
+
+            RabbitMQ will only indicate a publishing failure via publisher
+            confirms when there is an internal error in RabbitMQ. They are
+            not a mechanism for guaranteeing a message is routed. Usage of the
+            ``mandatory`` flag when publishing will only guarantee that the
+            message is routed into an exchange, but not that it is published
+            into a queue.
+
+        :raises RuntimeError: if publisher confirms are already enabled
         :raises aiorabbit.exceptions.NotImplemented:
-            if publisher confirmations are not available on the RabbitMQ server
+            if publisher confirms are not available on the RabbitMQ server
 
         """
         LOGGER.debug('Enabling confirm select')
         if 'publisher_confirms' not in self.server_capabilities:
             raise exceptions.NotImplemented(
-                'Server does not support publisher confirmations')
+                'Server does not support publisher confirms')
         elif self._publisher_confirms:
-            raise RuntimeError('Publisher confirmations are already enabled')
+            raise RuntimeError('Publisher confirms are already enabled')
         else:
             self._write(commands.Confirm.Select())
             self._set_state(STATE_CONFIRM_SELECT_SENT)
