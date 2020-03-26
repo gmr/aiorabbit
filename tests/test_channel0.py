@@ -177,7 +177,7 @@ class NoHeartbeatTestCase(TestCase):
     def test_negotiated_interval(self):
         self.loop.run_until_complete(self.open())
         self.assert_state(channel0.STATE_OPENOK_RECEIVED)
-        self.assertEqual(self.channel0.heartbeat_interval, 0)
+        self.assertEqual(self.channel0._heartbeat_interval, 0)
 
 
 class NoClientHeartbeatTestCase(TestCase):
@@ -188,7 +188,7 @@ class NoClientHeartbeatTestCase(TestCase):
     def test_negotiated_interval(self):
         self.loop.run_until_complete(self.open())
         self.assert_state(channel0.STATE_OPENOK_RECEIVED)
-        self.assertEqual(self.channel0.heartbeat_interval, 0)
+        self.assertEqual(self.channel0._heartbeat_interval, 0)
 
 
 class SmallerClientHeartbeatTestCase(TestCase):
@@ -199,7 +199,31 @@ class SmallerClientHeartbeatTestCase(TestCase):
     def test_negotiated_interval(self):
         self.loop.run_until_complete(self.open())
         self.assert_state(channel0.STATE_OPENOK_RECEIVED)
-        self.assertEqual(self.channel0.heartbeat_interval, 10)
+        self.assertEqual(self.channel0._heartbeat_interval, 10)
+
+
+class HeartbeatCheckTestCase(TestCase):
+
+    HEARTBEAT_INTERVAL = 30
+
+    def test_within_range(self):
+        self.loop.run_until_complete(self.open())
+        self.assert_state(channel0.STATE_OPENOK_RECEIVED)
+        self.channel0._last_heartbeat = self.loop.time() - 5
+        self.channel0._heartbeat_check()
+        self.assertIsInstance(
+            self.channel0._heartbeat_timer, asyncio.TimerHandle)
+        self.on_remote_close.assert_not_called()
+
+    def test_too_many_missed(self):
+        self.loop.run_until_complete(self.open())
+        self.assert_state(channel0.STATE_OPENOK_RECEIVED)
+        self.channel0._last_heartbeat = \
+            self.loop.time() - self.HEARTBEAT_INTERVAL * 3
+        self.channel0._heartbeat_check()
+        self.assertIsNone(self.channel0._heartbeat_timer)
+        self.on_remote_close.assert_called_once_with(
+            599, 'Too many missed heartbeats')
 
 
 class InvalidFrameTestCase(TestCase):

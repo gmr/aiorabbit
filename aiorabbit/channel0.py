@@ -122,21 +122,22 @@ class Channel0(state.StateManager):
                  on_remote_close: typing.Callable):
         super().__init__(loop)
         self.blocked = blocked
-        self.last_error: typing.Tuple[int, typing.Optional[str]] = (0, None)
-        self.locale = locale
-        self.password = password
-        self.product = product
-        self.properties: dict = {}
-        self.transport: typing.Optional[asyncio.Transport] = None
-        self.username = username
-        self.virtual_host = virtual_host
-        self.heartbeat_interval = heartbeat_interval
-        self.max_frame_size = constants.FRAME_MAX_SIZE
         self.max_channels = max_channels
-        self.on_remote_close = on_remote_close
+        self.max_frame_size = constants.FRAME_MAX_SIZE
+        self.properties: dict = {}
+        self._heartbeat_interval = heartbeat_interval
+        self._heartbeat_timer: typing.Optional[asyncio.TimerHandle] = None
+        self._last_error: typing.Tuple[int, typing.Optional[str]] = (0, None)
+        self._last_heartbeat = 0
+        self._locale = locale
+        self._on_remote_close = on_remote_close
+        self._password = password
+        self._product = product
+        self._transport: typing.Optional[asyncio.Transport] = None
+        self._username = username
+        self._virtual_host = virtual_host
 
     def process(self, value: COMMANDS) -> None:
-        self._logger.debug('Processing %r', value)
         if isinstance(value, commands.Connection.Start):
             self._set_state(STATE_START_RECEIVED)
             self._process_start(value)
@@ -153,15 +154,16 @@ class Channel0(state.StateManager):
             self.blocked.clear()
         elif isinstance(value, commands.Connection.Close):
             self._set_state(STATE_CLOSE_RECEIVED)
-            self.transport.write(
+            self._transport.write(
                 frame.marshal(commands.Connection.CloseOk(), 0))
             self._set_state(STATE_CLOSEOK_SENT)
-            self.on_remote_close(value.reply_code, value.reply_text)
+            self._on_remote_close(value.reply_code, value.reply_text)
         elif isinstance(value, commands.Connection.CloseOk):
             self._set_state(STATE_CLOSEOK_RECEIVED)
         elif isinstance(value, heartbeat.Heartbeat):
             self._set_state(STATE_HEARTBEAT_RECEIVED)
-            self.transport.write(frame.marshal(heartbeat.Heartbeat(), 0))
+            self._last_heartbeat = self._loop.time()
+            self._transport.write(frame.marshal(heartbeat.Heartbeat(), 0))
             self._set_state(STATE_HEARTBEAT_SENT)
         else:
             self._set_state(state.STATE_EXCEPTION,
@@ -169,31 +171,52 @@ class Channel0(state.StateManager):
                                 'Unsupported Frame Passed to Channel0'))
 
     async def open(self, transport: asyncio.Transport) -> bool:
-        self.transport = transport
-        self.transport.write(frame.marshal(header.ProtocolHeader(), 0))
+        self._transport = transport
+        self._transport.write(frame.marshal(header.ProtocolHeader(), 0))
         self._set_state(STATE_PROTOCOL_HEADER_SENT)
         result = await self._wait_on_state(
             STATE_OPENOK_RECEIVED, STATE_CLOSEOK_SENT)
-        self._logger.debug('Post channel0 wait_on_state: %r', self.state)
+        if self._heartbeat_interval:
+            self._logger.debug('Checking for heartbeats every %2f seconds',
+                               self._heartbeat_interval)
+            self._heartbeat_timer = self._loop.call_later(
+                self._heartbeat_interval, self._heartbeat_check)
         return result == STATE_OPENOK_RECEIVED
 
     async def close(self, code=200) -> None:
-        self.transport.write(frame.marshal(
+        self._heartbeat_timer.cancel()
+        self._heartbeat_timer = None
+        self._transport.write(frame.marshal(
             commands.Connection.Close(code, 'Client Requested', 0, 0), 0))
         self._set_state(STATE_CLOSE_SENT)
         await self._wait_on_state(STATE_CLOSEOK_RECEIVED)
 
     def reset(self):
         self._logger.debug('Resetting channel0')
+        self._heartbeat_timer.cancel()
+        self._heartbeat_timer = None
         self._reset_state(state.STATE_UNINITIALIZED)
+        self._last_heartbeat = 0
+        self._transport: typing.Optional[asyncio.Transport] = None
         self.properties: dict = {}
-        self.transport: typing.Optional[asyncio.Transport] = None
 
     @property
     def is_closed(self) -> bool:
         return self._state in [STATE_CLOSEOK_RECEIVED,
                                STATE_CLOSEOK_SENT,
                                state.STATE_EXCEPTION]
+
+    def _heartbeat_check(self):
+        threshold = self._loop.time() - (self._heartbeat_interval * 2)
+        if self._last_heartbeat < threshold:
+            msg = 'No heartbeat in {:2f} seconds'.format(
+                self._loop.time() - self._last_heartbeat)
+            self._logger.critical(msg)
+            self._heartbeat_timer = None
+            self._on_remote_close(599, 'Too many missed heartbeats')
+        else:
+            self._heartbeat_timer = self._loop.call_later(
+                self._heartbeat_interval, self._heartbeat_check)
 
     @staticmethod
     def _negotiate(client: int, server: int) -> int:
@@ -210,7 +233,7 @@ class Channel0(state.StateManager):
             self._logger.warning(
                 'AMQP version error (received %i.%i, expected %r)',
                 value.version_major, value.version_minor, constants.VERSION)
-            self.transport.close()
+            self._transport.close()
             return self._set_state(
                 state.STATE_EXCEPTION,
                 exceptions.ClientNegotiationException(
@@ -227,10 +250,10 @@ class Channel0(state.StateManager):
                         capability, self.properties[key][capability])
             else:
                 self._logger.debug('Server %s: %r', key, self.properties[key])
-        self.transport.write(frame.marshal(
+        self._transport.write(frame.marshal(
             commands.Connection.StartOk(
                 client_properties={
-                    'product': self.product,
+                    'product': self._product,
                     'platform': 'Python {}'.format(platform.python_version()),
                     'capabilities': {'authentication_failure_close': True,
                                      'basic.nack': True,
@@ -242,8 +265,8 @@ class Channel0(state.StateManager):
                                      'publisher_confirms': True},
                     'information': 'See https://aiorabbit.readthedocs.io',
                     'version': version},
-                response='\0{}\0{}'.format(self.username, self.password),
-                locale=self.locale), 0))
+                response='\0{}\0{}'.format(self._username, self._password),
+                locale=self._locale), 0))
         self._set_state(STATE_STARTOK_SENT)
 
     def _process_tune(self, value: commands.Connection.Tune) -> None:
@@ -251,15 +274,15 @@ class Channel0(state.StateManager):
             self.max_channels, value.channel_max)
         self.max_frame_size = self._negotiate(
             self.max_frame_size, value.frame_max)
-        if self.heartbeat_interval is None:
-            self.heartbeat_interval = value.heartbeat
-        elif not self.heartbeat_interval and not value.heartbeat:
-            self.heartbeat_interval = 0
-        self.transport.write(frame.marshal(
+        if self._heartbeat_interval is None:
+            self._heartbeat_interval = value.heartbeat
+        elif not self._heartbeat_interval and not value.heartbeat:
+            self._heartbeat_interval = 0
+        self._transport.write(frame.marshal(
             commands.Connection.TuneOk(
                 self.max_channels, self.max_frame_size,
-                self.heartbeat_interval), 0))
+                self._heartbeat_interval), 0))
         self._set_state(STATE_TUNEOK_SENT)
-        self.transport.write(
-            frame.marshal(commands.Connection.Open(self.virtual_host), 0))
+        self._transport.write(
+            frame.marshal(commands.Connection.Open(self._virtual_host), 0))
         self._set_state(STATE_OPEN_SENT)

@@ -1391,12 +1391,13 @@ class Client(state.StateManager):
                           ''.ljust(len(self._url.password), '*'),
                           self._url.host, self._url.port,
                           parse.quote(self._url.path[1:], ''))
+        heartbeat = self._url.query.get('heartbeat')
         self._channel0 = channel0.Channel0(
             self._blocked,
             self._url.user,
             self._url.password,
             self._url.path[1:],
-            self._url.query.get('heartbeat'),
+            int(heartbeat) if heartbeat else None,
             self._defaults.locale,
             self._loop,
             int(self._url.query.get('channel_max', '32768')),
@@ -1443,10 +1444,13 @@ class Client(state.StateManager):
     def _on_connected(self):
         self._set_state(STATE_CONNECTED)
 
-    def _on_disconnected(self, exc: Exception) -> None:
-        if self._state == STATE_CLOSING:  # pragma: nocover
-            self._logger.warning('Disconnected while %i: %s [%r]',
-                                 self._state, self.state, exc)
+    def _on_disconnected(self, exc: typing.Optional[Exception]) -> None:
+        self._logger.debug('Disconnected: %r', exc)
+        if not self.is_closed:
+            self._set_state(
+                STATE_CLOSED,
+                exceptions.ConnectionClosedException(
+                    'Socket closed' if not exc else str(exc)))
 
     def _on_frame(self, channel: int, value: frame.FrameTypes) -> None:
         self._last_frame = value
@@ -1553,8 +1557,13 @@ class Client(state.StateManager):
         self._last_error = (reply_code, reply_text)
         if reply_code < 300:
             return self._set_state(STATE_CLOSED)
-        self._set_state(state.STATE_EXCEPTION,
-                        exceptions.CLASS_MAPPING[reply_code](reply_text))
+        elif reply_code == 599:
+            self._set_state(
+                STATE_CLOSED, exceptions.ConnectionClosedException(reply_text))
+        else:
+            self._set_state(
+                state.STATE_EXCEPTION,
+                exceptions.CLASS_MAPPING[reply_code](reply_text))
 
     async def _open_channel(self) -> None:
         self._set_state(STATE_OPENING_CHANNEL)

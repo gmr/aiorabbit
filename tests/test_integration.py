@@ -181,3 +181,39 @@ class ContextManagerConsumeTestCase(ConsumeTestCase):
                     break
         msgs, _consumers = await self.client.queue_declare(self.queue)
         self.assertEqual(msgs, 0)
+
+    @testing.async_test
+    async def test_emulated_heartbeat_timeout_while_consuming(self):
+        messages = await self.rmq_setup()
+
+        async def consume_messages():
+            async with aiorabbit.connect(self.rabbitmq_url) as rabbitmq:
+                async for message in rabbitmq.consume(self.queue):
+                    messages.remove(message.body)
+                    await rabbitmq.basic_ack(message.delivery_tag)
+                    if not messages:
+                        rabbitmq._on_remote_close(599, 'Test Close')
+
+        with self.assertRaises(exceptions.ConnectionClosedException):
+            await consume_messages()
+
+        msgs, _consumers = await self.client.queue_declare(self.queue)
+        self.assertEqual(msgs, 0)
+
+    @testing.async_test
+    async def test_disconnected_while_consuming(self):
+        messages = await self.rmq_setup()
+
+        async def consume_messages():
+            async with aiorabbit.connect(self.rabbitmq_url) as rabbitmq:
+                async for message in rabbitmq.consume(self.queue):
+                    messages.remove(message.body)
+                    await rabbitmq.basic_ack(message.delivery_tag)
+                    if not messages:
+                        rabbitmq._on_disconnected(None)
+
+        with self.assertRaises(exceptions.ConnectionClosedException):
+            await consume_messages()
+
+        msgs, _consumers = await self.client.queue_declare(self.queue)
+        self.assertEqual(msgs, 0)
