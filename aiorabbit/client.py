@@ -539,12 +539,16 @@ class Client(state.StateManager):
             queue, no_local, no_ack, exclusive, arguments,
             lambda m: self._execute_callback(messages.put, m))
         try:
-            while True:
-                msg = await messages.get()
-                yield msg
-        except GeneratorExit:
-            pass
+            while not self.is_closed:
+                try:
+                    msg = messages.get_nowait()
+                except asyncio.QueueEmpty:
+                    await asyncio.sleep(0.01)
+                else:
+                    yield msg
         finally:
+            if self._exception:
+                raise self._exception
             await self.basic_cancel(consumer_tag)
 
     async def publish(self,
