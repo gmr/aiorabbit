@@ -1,11 +1,9 @@
 # coding: utf-8
 import datetime
-import logging
 import typing
 
 from pamqp import body, commands, header
 
-LOGGER = logging.getLogger(__name__)
 METHODS = typing.Union[commands.Basic.Deliver,
                        commands.Basic.GetOk,
                        commands.Basic.Return]

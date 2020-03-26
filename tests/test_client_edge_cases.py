@@ -1,9 +1,9 @@
 import asyncio
 import os
 
-from pamqp import base, body, commands, header
+from pamqp import base, commands
 
-from aiorabbit import client, exceptions, message, state
+from aiorabbit import client, exceptions, state
 from . import testing
 
 
@@ -42,7 +42,7 @@ class ChannelRotationTestCase(testing.ClientTestCase):
     @testing.async_test
     async def test_channel_exceeds_max_channels(self):
         await self.connect()
-        self.client._write(
+        self.client._write_frames(
             commands.Channel.Close(200, 'Client Requested', 0, 0))
         self.client._set_state(client.STATE_CHANNEL_CLOSE_SENT)
         await self.client._wait_on_state(client.STATE_CHANNEL_CLOSEOK_RECEIVED)
@@ -65,11 +65,12 @@ class BasicNackReceivedTestCase(testing.ClientTestCase):
     @testing.async_test
     async def test_basic_nack_received(self):
         await self.connect()
-        self.client._set_state(client.STATE_BASIC_PUBLISH_SENT)
-        self.client._set_state(client.STATE_CONTENT_HEADER_SENT)
-        self.client._set_state(client.STATE_CONTENT_BODY_SENT)
-        self.client._on_frame(1, commands.Basic.Nack(10))
-        self.assertSetEqual(self.client._nacks, {10})
+        delivery_tag = 10
+        self.client._delivery_tags[delivery_tag] = asyncio.Event()
+        self.client._set_state(client.STATE_MESSAGE_PUBLISHED)
+        self.client._on_frame(1, commands.Basic.Nack(delivery_tag))
+        await self.client._delivery_tags[delivery_tag].wait()
+        self.assertFalse(self.client._confirmation_result[delivery_tag])
 
 
 class BasicRejectReceivedTestCase(testing.ClientTestCase):
@@ -77,28 +78,15 @@ class BasicRejectReceivedTestCase(testing.ClientTestCase):
     @testing.async_test
     async def test_basic_nack_received(self):
         await self.connect()
-        self.client._set_state(client.STATE_BASIC_PUBLISH_SENT)
-        self.client._set_state(client.STATE_CONTENT_HEADER_SENT)
-        self.client._set_state(client.STATE_CONTENT_BODY_SENT)
-        self.client._on_frame(1, commands.Basic.Reject(10))
-        self.assertSetEqual(self.client._rejects, {10})
+        delivery_tag = 10
+        self.client._delivery_tags[delivery_tag] = asyncio.Event()
+        self.client._set_state(client.STATE_MESSAGE_PUBLISHED)
+        self.client._on_frame(1, commands.Basic.Reject(delivery_tag))
+        await self.client._delivery_tags[delivery_tag].wait()
+        self.assertFalse(self.client._confirmation_result[delivery_tag])
 
 
 class UnsupportedFrameOnFrameTestCase(testing.ClientTestCase):
-
-    @testing.async_test
-    async def test_delivery_unsupported_frame(self):
-        await self.connect()
-        msg_body = self.uuid4().encode('utf-8')
-        self.client._message = message.Message(commands.Basic.Cancel('foo'))
-        self.client._state = client.STATE_BASIC_DELIVER_RECEIVED
-        self.client._on_frame(
-            self.client._channel, header.ContentHeader(0, len(msg_body)))
-        self.loop.call_soon(
-            self.client._on_frame, self.client._channel,
-            body.ContentBody(msg_body))
-        with self.assertRaises(RuntimeError):
-            await self.client._wait_on_state(state.STATE_EXCEPTION)
 
     @testing.async_test
     async def test_unsupported_frame(self):

@@ -38,12 +38,11 @@ class AMQP(asyncio.Protocol):
                 LOGGER.debug('Bad frame: %r', self.buffer)
                 break
             else:
-                LOGGER.debug('Received frame: %r', value)
                 self.buffer = self.buffer[count:]
                 self.loop.call_soon(self.on_frame_received, channel, value)
 
     def pause_writing(self) -> None:  # pragma: nocover
-        LOGGER.critical('Should pause writing')
+        LOGGER.critical('Should pause writing, but it is not implemented')
 
     def resume_writing(self) -> None:  # pragma: nocover
-        LOGGER.info('Can resume writing')
+        LOGGER.info('Can resume writing, but it is not implemented')

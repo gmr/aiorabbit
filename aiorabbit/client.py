@@ -3,7 +3,6 @@ import asyncio
 import collections
 import dataclasses
 import datetime
-import logging
 import math
 import re
 import socket
@@ -17,8 +16,6 @@ from aiorabbit import (channel0, DEFAULT_LOCALE, DEFAULT_PRODUCT, DEFAULT_URL,
                        exceptions, message, protocol, state, types)
 
 NamePattern = re.compile(r'^[\w:.-]+$', flags=re.UNICODE)
-
-LOGGER = logging.getLogger(__name__)
 
 STATE_DISCONNECTED = 0x11
 STATE_CONNECTING = 0x12
@@ -77,9 +74,6 @@ STATE_BASIC_GETEMPTY_RECEIVED = 0x82
 STATE_BASIC_GETOK_RECEIVED = 0x83
 STATE_BASIC_NACK_RECEIVED = 0x84
 STATE_BASIC_NACK_SENT = 0x85
-STATE_BASIC_PUBLISH_SENT = 0x86
-STATE_CONTENT_HEADER_SENT = 0x87
-STATE_CONTENT_BODY_SENT = 0x88
 STATE_BASIC_QOS_SENT = 0x89
 STATE_BASIC_QOSOK_RECEIVED = 0x90
 STATE_BASIC_RECOVER_SENT = 0x91
@@ -87,9 +81,10 @@ STATE_BASIC_RECOVEROK_RECEIVED = 0x92
 STATE_BASIC_REJECT_RECEIVED = 0x93
 STATE_BASIC_REJECT_SENT = 0x94
 STATE_BASIC_RETURN_RECEIVED = 0x95
-STATE_MESSAGE_ASSEMBLED = 0x96
-STATE_CLOSING = 0x100
-STATE_CLOSED = 0x101
+STATE_MESSAGE_ASSEMBLED = 0x100
+STATE_MESSAGE_PUBLISHED = 0x101
+STATE_CLOSING = 0x102
+STATE_CLOSED = 0x103
 
 _STATE_MAP = {
     state.STATE_UNINITIALIZED: 'Uninitialized',
@@ -151,9 +146,7 @@ _STATE_MAP = {
     STATE_BASIC_GETOK_RECEIVED: 'Individual message to be delivered',
     STATE_BASIC_NACK_RECEIVED: 'Server sent negative acknowledgement',
     STATE_BASIC_NACK_SENT: 'Sending negative acknowledgement',
-    STATE_BASIC_PUBLISH_SENT: 'Publishing Message',
-    STATE_CONTENT_HEADER_SENT: 'Message Content Header sent',
-    STATE_CONTENT_BODY_SENT: 'Message Body sent',
+    STATE_MESSAGE_PUBLISHED: 'Message Published',
     STATE_BASIC_QOS_SENT: 'Setting QoS',
     STATE_BASIC_QOSOK_RECEIVED: 'QoS set',
     STATE_BASIC_RECOVER_SENT: 'Sending recover request',
@@ -188,9 +181,9 @@ _IDLE_STATE = [
     STATE_BASIC_CONSUME_SENT,
     STATE_BASIC_DELIVER_RECEIVED,
     STATE_BASIC_GET_SENT,
-    STATE_BASIC_PUBLISH_SENT,
     STATE_BASIC_QOS_SENT,
     STATE_BASIC_RECOVER_SENT,
+    STATE_MESSAGE_PUBLISHED,
     STATE_CLOSING,
     STATE_CLOSED
 ]
@@ -200,7 +193,7 @@ _STATE_TRANSITIONS = {
     state.STATE_EXCEPTION: [STATE_CLOSING, STATE_CLOSED, STATE_DISCONNECTED],
     STATE_DISCONNECTED: [STATE_CONNECTING],
     STATE_CONNECTING: [STATE_CONNECTED, STATE_CLOSED],
-    STATE_CONNECTED: [STATE_OPENED, STATE_CLOSED],
+    STATE_CONNECTED: [STATE_OPENED, STATE_CLOSING, STATE_CLOSED],
     STATE_OPENED: [STATE_OPENING_CHANNEL],
     STATE_OPENING_CHANNEL: [STATE_CHANNEL_OPEN_SENT],
     STATE_UPDATE_SECRET_SENT: [STATE_UPDATE_SECRETOK_RECEIVED],
@@ -281,9 +274,7 @@ _STATE_TRANSITIONS = {
     STATE_BASIC_GETOK_RECEIVED: [STATE_CONTENT_HEADER_RECEIVED],
     STATE_BASIC_NACK_RECEIVED: _IDLE_STATE,
     STATE_BASIC_NACK_SENT: _IDLE_STATE,
-    STATE_BASIC_PUBLISH_SENT: [STATE_CONTENT_HEADER_SENT],
-    STATE_CONTENT_HEADER_SENT: [STATE_CONTENT_BODY_SENT],
-    STATE_CONTENT_BODY_SENT: _IDLE_STATE + [
+    STATE_MESSAGE_PUBLISHED: _IDLE_STATE + [
         STATE_BASIC_ACK_RECEIVED,
         STATE_BASIC_NACK_RECEIVED,
         STATE_BASIC_REJECT_RECEIVED,
@@ -365,31 +356,33 @@ class Client(state.StateManager):
                  loop: typing.Optional[asyncio.AbstractEventLoop] = None,
                  on_return: typing.Optional[typing.Callable] = None):
         super().__init__(loop or asyncio.get_running_loop())
-        self._acks = set({})
         self._blocked = asyncio.Event()
+        self._block_write = asyncio.Event()
         self._channel: int = 0
+        self._channel0: typing.Optional[channel0.Channel0] = None
         self._channel_open = asyncio.Event()
+        self._confirmation_result: typing.Dict[int, bool] = {}
         self._connected = asyncio.Event()
         self._consumers: typing.Dict[str, typing.Callable] = {}
         self._delivery_tag = 0
+        self._delivery_tags: typing.Dict[int, asyncio.Event] = {}
         self._defaults = _Defaults(locale, product)
         self._get_future: typing.Optional[asyncio.Future] = None
+        self._last_error: typing.Tuple[int, typing.Optional[str]] = (0, None)
         self._last_frame: typing.Optional[base.Frame] = None
+        self._max_frame_size: typing.Optional[float] = None
         self._message: typing.Optional[message.Message] = None
-        self._nacks = set({})
         self._on_channel_close: typing.Optional[typing.Callable] = None
         self._on_message_return: typing.Optional[typing.Callable] = on_return
-        self._prefetch_count: typing.Optional[int] = None
-        self._rejects = set({})
-        self._transport: typing.Optional[asyncio.Transport] = None
         self._pending_consumers: typing.Deque[
             (asyncio.Future, typing.Callable)] = collections.deque([])
         self._protocol: typing.Optional[asyncio.Protocol] = None
         self._publisher_confirms = False
+        self._rpc_lock = asyncio.Lock()
         self._transactional = False
+        self._transport: typing.Optional[asyncio.Transport] = None
         self._url = yarl.URL(url)
         self._set_state(STATE_DISCONNECTED)
-        self._max_frame_size: typing.Optional[float] = None
 
     async def connect(self) -> None:
         """Connect to the RabbitMQ Server
@@ -416,8 +409,9 @@ class Client(state.StateManager):
         """
         try:
             await self._connect()
-        except (asyncio.TimeoutError,
-                OSError,
+        except (OSError,
+                RuntimeError,
+                asyncio.TimeoutError,
                 exceptions.AccessRefused,
                 exceptions.ClientNegotiationException) as exc:
             self._reset()
@@ -427,28 +421,29 @@ class Client(state.StateManager):
 
     async def close(self) -> None:
         """Close the client connection to the server"""
-        LOGGER.debug('Invoked Client.close() while is_closed (%r, %r)',
-                     self.is_closed, self._channel0)
         if self.is_closed or not self._channel0 or not self._transport:
-            LOGGER.warning('Close called when connection is not open')
+            self._logger.warning('Close called when connection is not open')
             if self._state != STATE_CLOSED:
                 self._set_state(STATE_CLOSED)
             return
-        if self._state != state.STATE_EXCEPTION:
-            if self._channel_open.is_set():
-                self._write(
-                    commands.Channel.Close(200, 'Client Requested', 0, 0))
-                self._set_state(STATE_CHANNEL_CLOSE_SENT)
-                await self._wait_on_state(STATE_CHANNEL_CLOSEOK_RECEIVED)
+        if self._channel_open.is_set():
+            await self._send_rpc(
+                commands.Channel.Close(200, 'Client Requested', 0, 0),
+                STATE_CHANNEL_CLOSE_SENT,
+                STATE_CHANNEL_CLOSEOK_RECEIVED)
         await self._close()
 
     @property
     def is_closed(self) -> bool:
-        """Indicates if the connection is closed"""
-        return self._state in [STATE_CLOSED,
-                               STATE_DISCONNECTED,
-                               state.STATE_UNINITIALIZED] \
-            or not self._transport
+        """Indicates if the connection is closed or closing"""
+        return (not self._channel0
+                or (self._channel0 and self._channel0.is_closed)
+                or self._state in [STATE_CLOSING,
+                                   STATE_CLOSED,
+                                   STATE_DISCONNECTED,
+                                   state.STATE_EXCEPTION,
+                                   state.STATE_UNINITIALIZED]
+                or not self._transport)
 
     @property
     def server_capabilities(self) -> typing.List[str]:
@@ -532,31 +527,25 @@ class Client(state.StateManager):
         .. code-block:: python3
            :caption: Example Usage
 
-            stop_consuming = False
             consumer = self.client.consume(self.queue)
             async for msg in consumer:
-                print(msg.body)
                 await self.client.basic_ack(msg.delivery_tag)
-                if stop_consuming:
-                    await consumer.aclose()
+                if msg.body == b'stop':
+                    break
 
         """
         messages = asyncio.Queue()
         consumer_tag = await self.basic_consume(
             queue, no_local, no_ack, exclusive, arguments,
             lambda m: self._execute_callback(messages.put, m))
-
         try:
             while True:
                 msg = await messages.get()
                 yield msg
         except GeneratorExit:
-            self._logger.debug('Exiting generator for %s', consumer_tag)
-
-        self._write(commands.Basic.Cancel(consumer_tag))
-        self._set_state(STATE_BASIC_CANCEL_SENT)
-        await self._wait_on_state(STATE_BASIC_CANCELOK_RECEIVED)
-        del self._consumers[consumer_tag]
+            pass
+        finally:
+            await self.basic_cancel(consumer_tag)
 
     async def publish(self,
                       exchange: str = 'amq.direct',
@@ -667,66 +656,60 @@ class Client(state.StateManager):
 
         if isinstance(message_body, str):
             message_body = message_body.encode('utf-8')
-
         self._delivery_tag += 1
+        if self._publisher_confirms:
+            self._delivery_tags[self._delivery_tag] = asyncio.Event()
         delivery_tag = self._delivery_tag
-        LOGGER.debug('Publishing delivery tag %i to %r %r',
-                     delivery_tag, exchange, routing_key)
-
-        self._write(commands.Basic.Publish(
-            exchange=exchange, routing_key=routing_key, mandatory=mandatory))
-        self._set_state(STATE_BASIC_PUBLISH_SENT)
-
         body_size = len(message_body)
-        self._write(header.ContentHeader(
-            body_size=body_size,
-            properties=commands.Basic.Properties(
-                app_id=app_id,
-                content_encoding=content_encoding,
-                content_type=content_type,
-                correlation_id=correlation_id,
-                delivery_mode=delivery_mode,
-                expiration=expiration,
-                headers=headers,
-                message_id=message_id,
-                message_type=message_type,
-                priority=priority,
-                reply_to=reply_to,
-                timestamp=timestamp,
-                user_id=user_id)))
-        self._set_state(STATE_CONTENT_HEADER_SENT)
+
+        frames = [
+            commands.Basic.Publish(
+                exchange=exchange,
+                routing_key=routing_key,
+                mandatory=mandatory),
+            header.ContentHeader(
+                body_size=body_size,
+                properties=commands.Basic.Properties(
+                    app_id=app_id,
+                    content_encoding=content_encoding,
+                    content_type=content_type,
+                    correlation_id=correlation_id,
+                    delivery_mode=delivery_mode,
+                    expiration=expiration,
+                    headers=headers,
+                    message_id=message_id,
+                    message_type=message_type,
+                    priority=priority,
+                    reply_to=reply_to,
+                    timestamp=timestamp,
+                    user_id=user_id))]
 
         # Calculate how many body frames are needed
-        frames = int(math.ceil(body_size / self._max_frame_size))
-        for offset in range(0, frames):  # Send the message
+        chunks = int(math.ceil(body_size / self._max_frame_size))
+        for offset in range(0, chunks):  # Send the message
             start = int(self._max_frame_size * offset)
             end = int(start + self._max_frame_size)
             if end > body_size:
                 end = int(body_size)
-            self._write(body.ContentBody(message_body[start:end]))
-        self._set_state(STATE_CONTENT_BODY_SENT)
+            frames.append(body.ContentBody(message_body[start:end]))
+        self._write_frames(*frames)
+        self._set_state(STATE_MESSAGE_PUBLISHED)
 
-        while self._publisher_confirms:
+        if self._publisher_confirms:
             result = await self._wait_on_state(
                 STATE_BASIC_ACK_RECEIVED,
                 STATE_BASIC_NACK_RECEIVED,
-                STATE_CHANNEL_CLOSE_RECEIVED)
-            if result == STATE_BASIC_ACK_RECEIVED \
-                    and delivery_tag in self._acks:
-                self._acks.remove(delivery_tag)
-                return True
-            elif result == STATE_BASIC_NACK_RECEIVED \
-                    and delivery_tag in self._nacks:  # pragma: nocover
-                """Basic.Nack will only be delivered if an internal error
-                occurs in the Erlang process responsible for a queue."""
-                self._nacks.remove(delivery_tag)
-                return False
-
-            #  State can only be STATE_CHANNEL_CLOSE_RECEIVED
-            err_frame = self._last_frame
-            await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
-            raise exceptions.CLASS_MAPPING[err_frame.reply_code](
-                err_frame.reply_text)
+                STATE_BASIC_REJECT_RECEIVED)
+            if result == STATE_CHANNEL_CLOSE_RECEIVED:
+                del self._delivery_tags[delivery_tag]
+                err = self._get_last_error()
+                raise exceptions.CLASS_MAPPING[err[0]](err[1])
+            else:
+                await self._delivery_tags[delivery_tag].wait()
+                result = self._confirmation_result[delivery_tag]
+                del self._delivery_tags[delivery_tag]
+                del self._confirmation_result[delivery_tag]
+                return result
 
     async def qos_prefetch(self, count=0, per_consumer=True) -> None:
         """Specify the number of messages to pre-allocate for a consumer.
@@ -753,9 +736,10 @@ class Client(state.StateManager):
                 and per_consumer:  # pragma: nocover
             self._logger.warning('per_consumer QoS prefetch requested but it '
                                  'is not available on the server')
-        self._write(commands.Basic.Qos(0, count, not per_consumer))
-        self._set_state(STATE_BASIC_QOS_SENT)
-        await self._wait_on_state(STATE_BASIC_QOSOK_RECEIVED)
+        await self._send_rpc(
+            commands.Basic.Qos(0, count, not per_consumer),
+            STATE_BASIC_QOS_SENT,
+            STATE_BASIC_QOSOK_RECEIVED)
 
     def register_basic_return_callback(self, value: typing.Callable) -> None:
         """Register a callback that is invoked when RabbitMQ returns a
@@ -770,7 +754,7 @@ class Client(state.StateManager):
            :caption: Example Usage
 
            async def on_return(msg: aiorabbit.message.Message) -> None:
-               LOGGER.warning('RabbitMQ Returned a message: %r', msg)
+               self._logger.warning('RabbitMQ Returned a message: %r', msg)
 
             client = Client(RABBITMQ_URL)
             client.register_basic_return_callback(on_return)
@@ -779,7 +763,6 @@ class Client(state.StateManager):
             # ... publish messages that could return
 
         """
-        LOGGER.debug('Registered message return callback: %r', value)
         self._on_message_return = value
 
     async def basic_qos(self) -> None:
@@ -853,22 +836,15 @@ class Client(state.StateManager):
             raise TypeError('callback must be a callable')
         elif consumer_tag is not None and not isinstance(consumer_tag, str):
             raise TypeError('consumer_tag must be of type str')
-        self._write(commands.Basic.Consume(
-            0, queue, consumer_tag or '', no_local, no_ack, exclusive,
-            False, arguments))
-        self._set_state(STATE_BASIC_CONSUME_SENT)
         consumer_tag_future = asyncio.Future()
         self._pending_consumers.append((consumer_tag_future, callback))
-        result = await self._wait_on_state(
-            STATE_BASIC_CONSUMEOK_RECEIVED, STATE_CHANNEL_CLOSE_RECEIVED)
-        if result == STATE_CHANNEL_CLOSE_RECEIVED:
-            self._pending_consumers.remove((consumer_tag_future, callback))
-            err_frame = self._last_frame
-            await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
-            raise exceptions.CLASS_MAPPING[err_frame.reply_code](
-                err_frame.reply_text)
+        await self._send_rpc(
+            commands.Basic.Consume(
+                0, queue, consumer_tag or '', no_local, no_ack, exclusive,
+                False, arguments),
+            STATE_BASIC_CONSUME_SENT,
+            STATE_BASIC_CONSUMEOK_RECEIVED)
         await consumer_tag_future
-        self._logger.debug('Consumer Tag Future: %r', consumer_tag_future)
         return consumer_tag_future.result()
 
     async def basic_cancel(self, consumer_tag: str = '') -> None:
@@ -893,10 +869,10 @@ class Client(state.StateManager):
         """
         if not isinstance(consumer_tag, str):
             raise TypeError('consumer_tag must be of type str')
-        self._write(commands.Basic.Cancel(consumer_tag))
-        self._set_state(STATE_BASIC_CANCEL_SENT)
-        await self._wait_on_state(STATE_BASIC_CANCELOK_RECEIVED)
-        del self._consumers[consumer_tag]
+        await self._send_rpc(
+            commands.Basic.Cancel(consumer_tag),
+            STATE_BASIC_CANCEL_SENT,
+            STATE_BASIC_CANCELOK_RECEIVED)
 
     async def basic_get(self, queue: str = '', no_ack: bool = False) \
             -> typing.Optional[message.Message]:
@@ -917,8 +893,11 @@ class Client(state.StateManager):
             raise TypeError('no_ack must be of type bool')
         future = asyncio.Future()
         self._get_future = future
-        self._write(commands.Basic.Get(0, queue, no_ack))
-        self._set_state(STATE_BASIC_GET_SENT)
+        await self._send_rpc(
+            commands.Basic.Get(0, queue, no_ack),
+            STATE_BASIC_GET_SENT,
+            STATE_BASIC_GETEMPTY_RECEIVED,
+            STATE_BASIC_GETOK_RECEIVED)
         await future
         self._get_future = None
         return future.result()
@@ -941,7 +920,7 @@ class Client(state.StateManager):
             raise TypeError('delivery_tag must be of type int')
         elif not isinstance(multiple, bool):
             raise TypeError('multiple must be of type bool')
-        self._write(commands.Basic.Ack(delivery_tag, multiple))
+        self._write_frames(commands.Basic.Ack(delivery_tag, multiple))
         self._set_state(STATE_BASIC_ACK_SENT)
 
     async def basic_nack(self,
@@ -965,7 +944,8 @@ class Client(state.StateManager):
             raise TypeError('multiple must be of type bool')
         elif not isinstance(requeue, bool):
             raise TypeError('requeue must be of type bool')
-        self._write(commands.Basic.Nack(delivery_tag, multiple, requeue))
+        self._write_frames(
+            commands.Basic.Nack(delivery_tag, multiple, requeue))
         self._set_state(STATE_BASIC_NACK_SENT)
 
     async def basic_reject(self,
@@ -985,7 +965,7 @@ class Client(state.StateManager):
             raise TypeError('delivery_tag must be of type int')
         elif not isinstance(requeue, bool):
             raise TypeError('requeue must be of type bool')
-        self._write(commands.Basic.Reject(delivery_tag, requeue))
+        self._write_frames(commands.Basic.Reject(delivery_tag, requeue))
         self._set_state(STATE_BASIC_REJECT_SENT)
 
     async def basic_publish(self) -> None:
@@ -1011,12 +991,10 @@ class Client(state.StateManager):
         """
         if not isinstance(requeue, bool):
             raise TypeError('requeue must be of type bool')
-        self._write(commands.Basic.Recover(requeue))
-        self._set_state(STATE_BASIC_RECOVER_SENT)
-        try:
-            await self._wait_on_state(STATE_BASIC_RECOVEROK_RECEIVED)
-        except exceptions.NotImplemented as err:
-            raise exceptions.NotImplemented(str(err))
+        await self._send_rpc(
+            commands.Basic.Recover(requeue),
+            STATE_BASIC_RECOVER_SENT,
+            STATE_BASIC_RECOVEROK_RECEIVED)
 
     async def confirm_select(self) -> None:
         """Enable `Publisher Confirms
@@ -1036,16 +1014,16 @@ class Client(state.StateManager):
             if publisher confirms are not available on the RabbitMQ server
 
         """
-        LOGGER.debug('Enabling confirm select')
         if 'publisher_confirms' not in self.server_capabilities:
             raise exceptions.NotImplemented(
                 'Server does not support publisher confirms')
         elif self._publisher_confirms:
             raise RuntimeError('Publisher confirms are already enabled')
         else:
-            self._write(commands.Confirm.Select())
-            self._set_state(STATE_CONFIRM_SELECT_SENT)
-            await self._wait_on_state(STATE_CONFIRM_SELECTOK_RECEIVED)
+            await self._send_rpc(
+                commands.Confirm.Select(),
+                STATE_CONFIRM_SELECT_SENT,
+                STATE_CONFIRM_SELECTOK_RECEIVED)
             self._publisher_confirms = True
 
     async def exchange_declare(self,
@@ -1089,19 +1067,13 @@ class Client(state.StateManager):
             raise TypeError('internal must be of type bool')
         elif arguments and not isinstance(arguments, dict):
             raise TypeError('arguments must be of type dict')
-        self._write(commands.Exchange.Declare(
-            exchange=exchange, exchange_type=exchange_type, passive=passive,
-            durable=durable, auto_delete=auto_delete, internal=internal,
-            arguments=arguments))
-        self._set_state(STATE_EXCHANGE_DECLARE_SENT)
-        result = await self._wait_on_state(
-            STATE_CHANNEL_CLOSE_RECEIVED,
+        await self._send_rpc(
+            commands.Exchange.Declare(
+                exchange=exchange, exchange_type=exchange_type,
+                passive=passive, durable=durable, auto_delete=auto_delete,
+                internal=internal, arguments=arguments),
+            STATE_EXCHANGE_DECLARE_SENT,
             STATE_EXCHANGE_DECLAREOK_RECEIVED)
-        if result == STATE_CHANNEL_CLOSE_RECEIVED:
-            err_frame = self._last_frame
-            await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
-            raise exceptions.CLASS_MAPPING[err_frame.reply_code](
-                err_frame.reply_text)
 
     async def exchange_delete(self,
                               exchange: str = '',
@@ -1118,9 +1090,10 @@ class Client(state.StateManager):
         :raises ValueError: when an argument fails to validate
 
         """
-        self._write(commands.Exchange.Delete(0, exchange, if_unused, False))
-        self._set_state(STATE_EXCHANGE_DELETE_SENT)
-        await self._wait_on_state(STATE_EXCHANGE_DELETEOK_RECEIVED)
+        await self._send_rpc(
+            commands.Exchange.Delete(0, exchange, if_unused, False),
+            STATE_EXCHANGE_DELETE_SENT,
+            STATE_EXCHANGE_DELETEOK_RECEIVED)
 
     async def exchange_bind(self,
                             destination: str = '',
@@ -1148,18 +1121,12 @@ class Client(state.StateManager):
             raise TypeError('routing_key must be of type str')
         elif arguments and not isinstance(arguments, dict):
             raise TypeError('arguments must be of type dict')
-        self._write(commands.Exchange.Bind(
-            destination=destination, source=source, routing_key=routing_key,
-            arguments=arguments))
-        self._set_state(STATE_EXCHANGE_BIND_SENT)
-        result = await self._wait_on_state(
-            STATE_CHANNEL_CLOSE_RECEIVED,
+        await self._send_rpc(
+            commands.Exchange.Bind(
+                destination=destination, source=source,
+                routing_key=routing_key, arguments=arguments),
+            STATE_EXCHANGE_BIND_SENT,
             STATE_EXCHANGE_BINDOK_RECEIVED)
-        if result == STATE_CHANNEL_CLOSE_RECEIVED:
-            err_frame = self._last_frame
-            await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
-            raise exceptions.CLASS_MAPPING[err_frame.reply_code](
-                err_frame.reply_text)
 
     async def exchange_unbind(self,
                               destination: str = '',
@@ -1186,11 +1153,12 @@ class Client(state.StateManager):
             raise TypeError('routing_key must be of type str')
         elif arguments and not isinstance(arguments, dict):
             raise TypeError('arguments must be of type dict')
-        self._write(commands.Exchange.Unbind(
-            destination=destination, source=source, routing_key=routing_key,
-            arguments=arguments))
-        self._set_state(STATE_EXCHANGE_UNBIND_SENT)
-        await self._wait_on_state(STATE_EXCHANGE_UNBINDOK_RECEIVED)
+        await self._send_rpc(
+            commands.Exchange.Unbind(
+                destination=destination, source=source,
+                routing_key=routing_key, arguments=arguments),
+            STATE_EXCHANGE_UNBIND_SENT,
+            STATE_EXCHANGE_UNBINDOK_RECEIVED)
 
     async def queue_declare(self,
                             queue: str = '',
@@ -1236,17 +1204,12 @@ class Client(state.StateManager):
             raise TypeError('auto_delete must be of type bool')
         elif arguments and not isinstance(arguments, dict):
             raise TypeError('arguments must be of type dict')
-        self._write(commands.Queue.Declare(
-            0, queue, passive, durable, exclusive, auto_delete,
-            False, arguments))
-        self._set_state(STATE_QUEUE_DECLARE_SENT)
-        result = await self._wait_on_state(
-            STATE_QUEUE_DECLAREOK_RECEIVED, STATE_CHANNEL_CLOSE_RECEIVED)
-        if result == STATE_CHANNEL_CLOSE_RECEIVED:
-            err_frame = self._last_frame
-            await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
-            raise exceptions.CLASS_MAPPING[err_frame.reply_code](
-                err_frame.reply_text)
+        await self._send_rpc(
+            commands.Queue.Declare(
+                0, queue, passive, durable, exclusive, auto_delete,
+                False, arguments),
+            STATE_QUEUE_DECLARE_SENT,
+            STATE_QUEUE_DECLAREOK_RECEIVED)
         return self._last_frame.message_count, self._last_frame.consumer_count
 
     async def queue_delete(self,
@@ -1270,10 +1233,10 @@ class Client(state.StateManager):
             raise TypeError('if_unused must be of type bool')
         elif not isinstance(if_empty, bool):
             raise TypeError('if_empty must be of type bool')
-        self._write(commands.Queue.Delete(
-            0, queue, if_unused, if_empty, False))
-        self._set_state(STATE_QUEUE_DELETE_SENT)
-        await self._wait_on_state(STATE_QUEUE_DELETEOK_RECEIVED)
+        await self._send_rpc(
+            commands.Queue.Delete(0, queue, if_unused, if_empty, False),
+            STATE_QUEUE_DELETE_SENT,
+            STATE_QUEUE_DELETEOK_RECEIVED)
 
     async def queue_bind(self,
                          queue: str = '',
@@ -1304,16 +1267,11 @@ class Client(state.StateManager):
             raise TypeError('routing_Key must be of type str')
         elif arguments and not isinstance(arguments, dict):
             raise TypeError('arguments must be of type dict')
-        self._write(commands.Queue.Bind(
-            0, queue, exchange, routing_key, False, arguments))
-        self._set_state(STATE_QUEUE_BIND_SENT)
-        result = await self._wait_on_state(
-            STATE_QUEUE_BINDOK_RECEIVED, STATE_CHANNEL_CLOSE_RECEIVED)
-        if result == STATE_CHANNEL_CLOSE_RECEIVED:
-            err_frame = self._last_frame
-            await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
-            raise exceptions.CLASS_MAPPING[err_frame.reply_code](
-                err_frame.reply_text)
+        await self._send_rpc(
+            commands.Queue.Bind(
+                0, queue, exchange, routing_key, False, arguments),
+            STATE_QUEUE_BIND_SENT,
+            STATE_QUEUE_BINDOK_RECEIVED)
 
     async def queue_unbind(self,
                            queue: str = '',
@@ -1341,10 +1299,10 @@ class Client(state.StateManager):
             raise TypeError('routing_Key must be of type str')
         elif arguments and not isinstance(arguments, dict):
             raise TypeError('arguments must be of type dict')
-        self._write(commands.Queue.Unbind(
-            0, queue, exchange, routing_key, arguments))
-        self._set_state(STATE_QUEUE_UNBIND_SENT)
-        await self._wait_on_state(STATE_QUEUE_UNBINDOK_RECEIVED)
+        await self._send_rpc(
+            commands.Queue.Unbind(0, queue, exchange, routing_key, arguments),
+            STATE_QUEUE_UNBIND_SENT,
+            STATE_QUEUE_UNBINDOK_RECEIVED)
 
     async def queue_purge(self, queue: str = '') -> int:
         """Purge a queue
@@ -1358,17 +1316,11 @@ class Client(state.StateManager):
         """
         if not isinstance(queue, str):
             raise TypeError('queue must be of type str')
-        self._write(commands.Queue.Purge(0, queue, False))
-        self._set_state(STATE_QUEUE_PURGE_SENT)
-        result = await self._wait_on_state(
-            STATE_QUEUE_PURGEOK_RECEIVED, STATE_CHANNEL_CLOSE_RECEIVED)
-        if result == STATE_CHANNEL_CLOSE_RECEIVED:
-            err_frame = self._last_frame
-            await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
-            raise exceptions.CLASS_MAPPING[err_frame.reply_code](
-                err_frame.reply_text)
-        else:
-            return self._last_frame.message_count
+        await self._send_rpc(
+            commands.Queue.Purge(0, queue, False),
+            STATE_QUEUE_PURGE_SENT,
+            STATE_QUEUE_PURGEOK_RECEIVED)
+        return self._last_frame.message_count
 
     async def tx_select(self) -> None:
         """Select standard transaction mode
@@ -1378,10 +1330,10 @@ class Client(state.StateManager):
         :meth:`~Client.tx_commit` or :meth:`~Client.tx_rollback` methods.
 
         """
-        self._write(commands.Tx.Select())
-        self._set_state(STATE_TX_SELECT_SENT)
-        self._transactional = True
-        await self._wait_on_state(STATE_TX_SELECTOK_RECEIVED)
+        await self._send_rpc(
+            commands.Tx.Select(),
+            STATE_TX_SELECT_SENT,
+            STATE_TX_SELECTOK_RECEIVED)
 
     async def tx_commit(self) -> None:
         """    Commit the current transaction
@@ -1396,9 +1348,10 @@ class Client(state.StateManager):
         """
         if not self._transactional:
             raise exceptions.NoTransactionError()
-        self._write(commands.Tx.Commit())
-        self._set_state(STATE_TX_COMMIT_SENT)
-        await self._wait_on_state(STATE_TX_COMMITOK_RECEIVED)
+        await self._send_rpc(
+            commands.Tx.Commit(),
+            STATE_TX_COMMIT_SENT,
+            STATE_TX_COMMITOK_RECEIVED)
 
     async def tx_rollback(self) -> None:
         """    Abandon the current transaction
@@ -1415,12 +1368,12 @@ class Client(state.StateManager):
         """
         if not self._transactional:
             raise exceptions.NoTransactionError()
-        self._write(commands.Tx.Rollback())
-        self._set_state(STATE_TX_ROLLBACK_SENT)
-        await self._wait_on_state(STATE_TX_ROLLBACKOK_RECEIVED)
+        await self._send_rpc(
+            commands.Tx.Rollback(),
+            STATE_TX_ROLLBACK_SENT,
+            STATE_TX_ROLLBACKOK_RECEIVED)
 
     async def _close(self) -> None:
-        LOGGER.debug('Internal close method invoked')
         self._set_state(STATE_CLOSING)
         await self._channel0.close()
         self._transport.close()
@@ -1429,11 +1382,11 @@ class Client(state.StateManager):
 
     async def _connect(self) -> None:
         self._set_state(STATE_CONNECTING)
-        LOGGER.info('Connecting to %s://%s:%s@%s:%s/%s',
-                    self._url.scheme, self._url.user,
-                    ''.ljust(len(self._url.password), '*'),
-                    self._url.host, self._url.port,
-                    parse.quote(self._url.path[1:], ''))
+        self._logger.info('Connecting to %s://%s:%s@%s:%s/%s',
+                          self._url.scheme, self._url.user,
+                          ''.ljust(len(self._url.password), '*'),
+                          self._url.host, self._url.port,
+                          parse.quote(self._url.path[1:], ''))
         self._channel0 = channel0.Channel0(
             self._blocked,
             self._url.user,
@@ -1448,6 +1401,7 @@ class Client(state.StateManager):
         self._max_frame_size = float(self._channel0.max_frame_size)
 
         ssl = self._url.scheme == 'amqps'
+
         future = self._loop.create_connection(
             lambda: protocol.AMQP(
                 self._on_connected,
@@ -1456,18 +1410,12 @@ class Client(state.StateManager):
             ), self._url.host, self._url.port,
             server_hostname=self._url.host if ssl else None,
             ssl=ssl)
-        try:
-            self._transport, self._protocol = await asyncio.wait_for(
-                future, timeout=self._connect_timeout)
-        except asyncio.TimeoutError as exc:
-            self._set_state(state.STATE_EXCEPTION, exc)
-            raise
-        else:
-            self._max_frame_size = float(self._channel0.max_frame_size)
-            await self._channel0.open(self._transport)
-            if self._state == state.STATE_EXCEPTION:
-                raise self._exception
-            self._set_state(STATE_OPENED)
+        self._transport, self._protocol = await asyncio.wait_for(
+            future, timeout=self._connect_timeout)
+        self._max_frame_size = float(self._channel0.max_frame_size)
+        if await self._channel0.open(self._transport):
+            return self._set_state(STATE_OPENED)
+        await self._wait_on_state(STATE_OPENED)  # To catch connection errors
 
     @property
     def _connect_timeout(self) -> float:
@@ -1483,31 +1431,32 @@ class Client(state.StateManager):
         if asyncio.iscoroutine(result):
             self._loop.call_soon(asyncio.ensure_future, result)
 
-    def _on_connected(self) -> None:
+    def _get_last_error(self) -> typing.Tuple[int, typing.Optional[str]]:
+        err = self._last_error
+        self._last_error = (0, None)
+        return err
+
+    def _on_connected(self):
         self._set_state(STATE_CONNECTED)
 
     def _on_disconnected(self, exc: Exception) -> None:
-        LOGGER.debug('Disconnected [%r] (%i) %s', exc, self._state, self.state)
+        if self._state == STATE_CLOSING:  # pragma: nocover
+            self._logger.warning('Disconnected while %i: %s [%r]',
+                                 self._state, self.state, exc)
 
     def _on_frame(self, channel: int, value: frame.FrameTypes) -> None:
         self._last_frame = value
         if channel == 0:
-            try:
-                self._channel0.process(value)
-            except exceptions.AIORabbitException as exc:
-                self._set_state(state.STATE_EXCEPTION, exc)
+            self._channel0.process(value)
         elif isinstance(value, commands.Basic.Ack):
+            self._set_delivery_tag_result(value.delivery_tag, True)
             self._set_state(STATE_BASIC_ACK_RECEIVED)
-            LOGGER.debug('Received ack for delivery_tag %i',
-                         value.delivery_tag)
-            self._acks.add(value.delivery_tag)
         elif isinstance(value, commands.Basic.CancelOk):
+            del self._consumers[value.consumer_tag]
             self._set_state(STATE_BASIC_CANCELOK_RECEIVED)
         elif isinstance(value, commands.Basic.ConsumeOk):
             future, callback = self._pending_consumers.popleft()
             future.set_result(value.consumer_tag)
-            self._logger.debug('Adding consumer tag %r: %r (%r)',
-                               value.consumer_tag, callback, future)
             self._consumers[value.consumer_tag] = callback
             self._set_state(STATE_BASIC_CONSUMEOK_RECEIVED)
         elif isinstance(value, commands.Basic.Deliver):
@@ -1520,30 +1469,30 @@ class Client(state.StateManager):
             self._set_state(STATE_BASIC_GETOK_RECEIVED)
             self._message = message.Message(value)
         elif isinstance(value, commands.Basic.Nack):
+            self._set_delivery_tag_result(value.delivery_tag, False)
             self._set_state(STATE_BASIC_NACK_RECEIVED)
-            LOGGER.debug('Received nack for delivery_tag %i',
-                         value.delivery_tag)
-            self._nacks.add(value.delivery_tag)
         elif isinstance(value, commands.Basic.QosOk):
             self._set_state(STATE_BASIC_QOSOK_RECEIVED)
         elif isinstance(value, commands.Basic.RecoverOk):
             self._set_state(STATE_BASIC_RECOVEROK_RECEIVED)
         elif isinstance(value, commands.Basic.Reject):
+            self._set_delivery_tag_result(value.delivery_tag, False)
             self._set_state(STATE_BASIC_REJECT_RECEIVED)
-            LOGGER.debug('Received reject for delivery_tag %i',
-                         value.delivery_tag)
-            self._rejects.add(value.delivery_tag)
         elif isinstance(value, commands.Basic.Return):
             self._set_state(STATE_BASIC_RETURN_RECEIVED)
             self._message = message.Message(value)
-        elif isinstance(value, commands.Channel.OpenOk):
-            self._set_state(STATE_CHANNEL_OPENOK_RECEIVED)
         elif isinstance(value, commands.Channel.Close):
             self._set_state(STATE_CHANNEL_CLOSE_RECEIVED)
-            self._on_channel_closed(value)
+            self._write_frames(commands.Channel.CloseOk())
+            self._last_error = value.reply_code, value.reply_text
+            self._channel_open.clear()
+            self._set_state(STATE_CHANNEL_CLOSEOK_SENT)
         elif isinstance(value, commands.Channel.CloseOk):
             self._channel_open.clear()
             self._set_state(STATE_CHANNEL_CLOSEOK_RECEIVED)
+        elif isinstance(value, commands.Channel.OpenOk):
+            self._channel_open.set()
+            self._set_state(STATE_CHANNEL_OPENOK_RECEIVED)
         elif isinstance(value, commands.Confirm.SelectOk):
             self._set_state(STATE_CONFIRM_SELECTOK_RECEIVED)
         elif isinstance(value, header.ContentHeader):
@@ -1553,23 +1502,16 @@ class Client(state.StateManager):
             self._set_state(STATE_CONTENT_BODY_RECEIVED)
             self._message.body_frames.append(value)
             if self._message.is_complete:
-                self._logger.debug('Message completed: %r (%r)',
-                                   self._message, self._message.method)
                 self._set_state(STATE_MESSAGE_ASSEMBLED)
-                method = None
                 if isinstance(self._message.method, commands.Basic.Deliver):
-                    method = self._consumers[self._message.consumer_tag]
+                    self._execute_callback(
+                        self._consumers[self._message.consumer_tag],
+                        self._pop_message())
                 elif isinstance(self._message.method, commands.Basic.GetOk):
                     self._get_future.set_result(self._pop_message())
-                elif isinstance(self._message.method, commands.Basic.Return):
-                    method = self._on_message_return
-                else:
-                    self._set_state(
-                        state.STATE_EXCEPTION,
-                        RuntimeError('Unsupported message frame'))
-                if method is not None:
-                    self._execute_callback(method, self._pop_message())
-
+                else:  # This will always be Basic.Return
+                    self._execute_callback(
+                        self._on_message_return, self._pop_message())
         elif isinstance(value, commands.Exchange.BindOk):
             self._set_state(STATE_EXCHANGE_BINDOK_RECEIVED)
         elif isinstance(value, commands.Exchange.DeclareOk):
@@ -1589,6 +1531,7 @@ class Client(state.StateManager):
         elif isinstance(value, commands.Queue.UnbindOk):
             self._set_state(STATE_QUEUE_UNBINDOK_RECEIVED)
         elif isinstance(value, commands.Tx.SelectOk):
+            self._transactional = True
             self._set_state(STATE_TX_SELECTOK_RECEIVED)
         elif isinstance(value, commands.Tx.CommitOk):
             self._set_state(STATE_TX_COMMITOK_RECEIVED)
@@ -1598,29 +1541,26 @@ class Client(state.StateManager):
             self._set_state(state.STATE_EXCEPTION,
                             RuntimeError('Unsupported AMQ method'))
 
-    def _on_channel_closed(self, value: commands.Channel.Close) -> None:
-        LOGGER.info('Channel closed: (%i) %s',
-                    value.reply_code, value.reply_text)
-        self._channel_open.clear()
-        self._write(commands.Channel.CloseOk())
-        self._set_state(STATE_CHANNEL_CLOSEOK_SENT)
-        self._loop.call_soon(asyncio.ensure_future, self._open_channel())
-
-    def _on_remote_close(self, status_code: int, exc: Exception) -> None:
-        LOGGER.debug('Remote close received %i (%r)', status_code, exc)
-        self._set_state(STATE_CLOSED, exc)
+    def _on_remote_close(self,
+                         reply_code: int = 0,
+                         reply_text: str = 'Unknown') -> None:
+        self._logger.info('Remote server closed the connection (%s) %s',
+                          reply_code, reply_text)
+        self._last_error = (reply_code, reply_text)
+        if reply_code < 300:
+            return self._set_state(STATE_CLOSED)
+        self._set_state(state.STATE_EXCEPTION,
+                        exceptions.CLASS_MAPPING[reply_code](reply_text))
 
     async def _open_channel(self) -> None:
-        LOGGER.debug('Opening channel')
         self._set_state(STATE_OPENING_CHANNEL)
         self._channel += 1
         if self._channel > self._channel0.max_channels:
             self._channel = 1
-        self._write(commands.Channel.Open())
+        self._transport.write(
+            frame.marshal(commands.Channel.Open(), self._channel))
         self._set_state(STATE_CHANNEL_OPEN_SENT)
-        await self._wait_on_state(STATE_CHANNEL_OPENOK_RECEIVED)
-        self._channel_open.set()
-        LOGGER.debug('Channel open')
+        await self._channel_open.wait()
 
     def _pop_message(self) -> message.Message:
         if not self._message:
@@ -1629,21 +1569,38 @@ class Client(state.StateManager):
         self._message = None
         return value
 
+    async def _post_wait_on_state(
+            self, result: int = 0,
+            exc: typing.Optional[exceptions.AIORabbitException] = None,
+            raise_on_channel_close: bool = False) -> int:
+        """Process results from Client._send_rpc and Client._wait_on_state"""
+        if exc:
+            err = self._get_last_error()
+            if not isinstance(exc, exceptions.AccessRefused):
+                await asyncio.sleep(0.001)  # Let pending things happen
+                await self._reconnect()
+            raise exceptions.CLASS_MAPPING[err[0]](err[1])
+        if result == STATE_CHANNEL_CLOSE_RECEIVED and self._last_error[0] > 0:
+            await self._open_channel()
+            await asyncio.sleep(0.001)  # Sleep to let pending things happen
+            if raise_on_channel_close:
+                err = self._get_last_error()
+                raise exceptions.CLASS_MAPPING[err[0]](err[1])
+            self._logger.warning('Channel was closed due to an error (%i) %s',
+                                 *self._last_error)
+        return result
+
     async def _reconnect(self) -> None:
-        LOGGER.debug('Reconnecting')
+        self._logger.debug('Reconnecting to RabbitMQ')
         publisher_confirms = self._publisher_confirms
         self._reset()
-        LOGGER.debug('Pre-reconnect state: %r', self.state)
         await self._connect()
-        LOGGER.debug('Post-connected on reconnect')
         await self._open_channel()
-        LOGGER.debug('Post open state: %r', self.state)
         if publisher_confirms:
             await self.confirm_select()
-        LOGGER.debug('State: %r', self.state)
 
     def _reset(self) -> None:
-        LOGGER.debug('Resetting internal state')
+        self._logger.debug('Resetting internal state')
         self._blocked.clear()
         self._channel = 0
         self._channel_open.clear()
@@ -1655,6 +1612,30 @@ class Client(state.StateManager):
         self._transport = None
         self._state = STATE_CLOSED
         self._state_start = self._loop.time()
+
+    async def _send_rpc(self, value: frame.FrameTypes,
+                        new_state: int,
+                        *states: int) -> int:
+        """Writes the RPC frame, blocking other RPCs, waiting on states,
+        returning the result from :meth:`Client._wait_on_state`
+
+        """
+        states = list(states) + [STATE_CHANNEL_CLOSE_RECEIVED]
+        exc, result = None, 0
+        async with self._rpc_lock:
+            if not self.is_closed:
+                self._write_frames(value)
+                self._set_state(new_state)
+                try:
+                    result = await super()._wait_on_state(*states)
+                except exceptions.AIORabbitException as err:
+                    exc = err
+        return await self._post_wait_on_state(result, exc, True)
+
+    def _set_delivery_tag_result(self, delivery_tag: int, ack: bool):
+        for tag in range(min(self._delivery_tags.keys()), delivery_tag + 1):
+            self._confirmation_result[tag] = ack
+            self._delivery_tags[tag].set()
 
     @staticmethod
     def _validate_bool(name: str, value: typing.Any) -> None:
@@ -1685,18 +1666,17 @@ class Client(state.StateManager):
         elif len(value) > 256:
             raise ValueError('{} must not exceed 256 characters'.format(name))
 
-    def _write(self, value: frame.FrameTypes) -> None:
-        LOGGER.debug('Writing frame %r to channel %i', value, self._channel)
-        self._transport.write(frame.marshal(value, self._channel))
+    def _write_frames(self, *frames: frame.FrameTypes) -> None:
+        """Write one or more frames to the socket, marshalling on the way"""
+        for value in frames:
+            self._logger.debug('Writing frame: %r', value)
+            self._transport.write(frame.marshal(value, self._channel))
 
-    async def _wait_on_state(self, *args) -> int:
+    async def _wait_on_state(self, *args: int) -> int:
+        args = list(args) + [STATE_CHANNEL_CLOSE_RECEIVED]
         try:
             result = await super()._wait_on_state(*args)
         except exceptions.AIORabbitException as exc:
-            LOGGER.warning('Exception raised while waiting: %s (%i) %s',
-                           exc, self._state, self.state)
-            await self._reconnect()
-            raise exc
+            await self._post_wait_on_state(exc=exc)
         else:
-            self._logger.debug('Post state._wait_on_state: %r', result)
-            return result
+            return await self._post_wait_on_state(result)

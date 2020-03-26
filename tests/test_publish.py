@@ -152,6 +152,7 @@ class PublishingTestCase(testing.ClientTestCase):
 
     @testing.async_test
     async def test_publish_with_bad_exchange(self):
+        # Here we expect the exception to pass silently except for logging
         self.exchange = str(uuid.uuid4())
         await self.connect()
         channel = self.client._channel

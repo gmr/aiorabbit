@@ -99,7 +99,7 @@ class IntegrationTestCase(testing.ClientTestCase):
     async def test_update_secret_raises(self):
         await self.connect()
         with self.assertRaises(exceptions.CommandInvalid):
-            self.client._write(
+            self.client._write_frames(
                 commands.Connection.UpdateSecret('foo', 'bar'))
             await self.client._wait_on_state(
                 client.STATE_UPDATE_SECRETOK_RECEIVED)
@@ -141,8 +141,7 @@ class ConsumeTestCase(testing.ClientTestCase):
         self.queue = self.uuid4()
         self.exchange = 'amq.topic'
 
-    @testing.async_test
-    async def test_consume(self):
+    async def rmq_setup(self):
         await self.connect()
         await self.client.queue_declare(self.queue)
         await self.client.queue_bind(self.queue, self.exchange, '#')
@@ -155,13 +154,30 @@ class ConsumeTestCase(testing.ClientTestCase):
         while msgs < len(messages):
             await asyncio.sleep(0.5)
             msgs, consumers = await self.client.queue_declare(self.queue)
+        return messages
 
-        consumer = self.client.consume(self.queue)
-        async for message in consumer:
+    @testing.async_test
+    async def test_consume(self):
+        messages = await self.rmq_setup()
+        async for message in self.client.consume(self.queue):
             messages.remove(message.body)
             await self.client.basic_ack(message.delivery_tag)
             if not messages:
-                await consumer.aclose()
+                break
+        msgs, _consumers = await self.client.queue_declare(self.queue)
+        self.assertEqual(msgs, 0)
 
+
+class ContextManagerConsumeTestCase(ConsumeTestCase):
+
+    @testing.async_test
+    async def test_consume(self):
+        messages = await self.rmq_setup()
+        async with aiorabbit.connect(self.rabbitmq_url) as rabbitmq:
+            async for message in rabbitmq.consume(self.queue):
+                messages.remove(message.body)
+                await rabbitmq.basic_ack(message.delivery_tag)
+                if not messages:
+                    break
         msgs, _consumers = await self.client.queue_declare(self.queue)
         self.assertEqual(msgs, 0)

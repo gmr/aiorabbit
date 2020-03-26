@@ -128,37 +128,29 @@ class RemoteCloseTestCase(TestCase):
     def test_with_remote_200(self):
         self.loop.run_until_complete(self.open())
         self.channel0.process(commands.Connection.Close(200, 'OK'))
-        self.assert_state(channel0.STATE_CLOSE_OK_SENT)
-
-    def test_with_fake_code(self):
-        self.loop.run_until_complete(self.open())
-        with self.assertRaises(exceptions.ConnectionClosedException):
-            self.channel0.process(
-                commands.Connection.Close(999, 'Error'))
-        self.assert_state(state.STATE_EXCEPTION)
+        self.assert_state(channel0.STATE_CLOSEOK_SENT)
 
     def test_with_invalid_path(self):
         self.loop.run_until_complete(self.open())
-        with self.assertRaises(exceptions.InvalidPath):
-            self.channel0.process(
-                commands.Connection.Close(402, 'INVALID-PATH'))
-        self.assert_state(state.STATE_EXCEPTION)
+        self.channel0.process(
+            commands.Connection.Close(402, 'INVALID-PATH'))
+        self.on_remote_close.assert_called_once_with(402, 'INVALID-PATH')
 
 
 class ClientCloseTestCase(TestCase):
 
     def test_close(self):
         self.loop.run_until_complete(self.open())
-        self.assert_state(channel0.STATE_OPEN_OK_RECEIVED)
+        self.assert_state(channel0.STATE_OPENOK_RECEIVED)
         self.loop.run_until_complete(self.channel0.close())
-        self.assert_state(channel0.STATE_CLOSED)
+        self.assert_state(channel0.STATE_CLOSEOK_RECEIVED)
 
 
 class ConnectionBlockedTestCase(TestCase):
 
     def test_block_unblock(self):
         self.loop.run_until_complete(self.open())
-        self.assert_state(channel0.STATE_OPEN_OK_RECEIVED)
+        self.assert_state(channel0.STATE_OPENOK_RECEIVED)
         self.channel0.process(commands.Connection.Blocked())
         self.assert_state(channel0.STATE_BLOCKED_RECEIVED)
         self.assertTrue(self.channel0.blocked.is_set())
@@ -171,7 +163,7 @@ class HeartbeatTestCase(TestCase):
 
     def test_heartbeat(self):
         self.loop.run_until_complete(self.open())
-        self.assert_state(channel0.STATE_OPEN_OK_RECEIVED)
+        self.assert_state(channel0.STATE_OPENOK_RECEIVED)
         self.channel0.process(heartbeat.Heartbeat())
         self.assert_state(channel0.STATE_HEARTBEAT_SENT)
         self.assertTrue(self.heartbeat.is_set())
@@ -184,7 +176,7 @@ class NoHeartbeatTestCase(TestCase):
 
     def test_negotiated_interval(self):
         self.loop.run_until_complete(self.open())
-        self.assert_state(channel0.STATE_OPEN_OK_RECEIVED)
+        self.assert_state(channel0.STATE_OPENOK_RECEIVED)
         self.assertEqual(self.channel0.heartbeat_interval, 0)
 
 
@@ -195,7 +187,7 @@ class NoClientHeartbeatTestCase(TestCase):
 
     def test_negotiated_interval(self):
         self.loop.run_until_complete(self.open())
-        self.assert_state(channel0.STATE_OPEN_OK_RECEIVED)
+        self.assert_state(channel0.STATE_OPENOK_RECEIVED)
         self.assertEqual(self.channel0.heartbeat_interval, 0)
 
 
@@ -206,15 +198,17 @@ class SmallerClientHeartbeatTestCase(TestCase):
 
     def test_negotiated_interval(self):
         self.loop.run_until_complete(self.open())
-        self.assert_state(channel0.STATE_OPEN_OK_RECEIVED)
+        self.assert_state(channel0.STATE_OPENOK_RECEIVED)
         self.assertEqual(self.channel0.heartbeat_interval, 10)
 
 
 class InvalidFrameTestCase(TestCase):
 
-    def test_invalid_frame_raises(self):
-        with self.assertRaises(exceptions.AIORabbitException):
-            self.channel0.process(commands.Basic.Cancel('foo'))
+    def test_invalid_frame_state(self):
+        self.channel0.process(commands.Basic.Cancel('foo'))
+        self.assert_state(state.STATE_EXCEPTION)
+        self.assertIsInstance(self.channel0._exception,
+                              exceptions.AIORabbitException)
 
 
 class ResetTestCase(TestCase):

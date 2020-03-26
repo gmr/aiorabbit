@@ -31,7 +31,6 @@ class StateManager:
         self._state: int = STATE_UNINITIALIZED
         self._state_start: float = self._loop.time()
         self._waits: dict = {}
-        self._waiting: int = 0
 
     @property
     def exception(self) -> typing.Optional[Exception]:
@@ -65,8 +64,8 @@ class StateManager:
 
     def _reset_state(self, value: int) -> None:
         self._logger.debug(
-            'Reset state %r while state is %r with %i waiting',
-            self.state_description(value), self.state, self._waiting)
+            'Reset state %r while state is %r - %r',
+            self.state_description(value), self.state, self._waits)
         self._state = value
         self._state_start = self._loop.time()
         self._exc = None
@@ -75,54 +74,50 @@ class StateManager:
     def _set_state(self, value: int,
                    exc: typing.Optional[Exception] = None) -> None:
         self._logger.debug(
-            'Set state %r (%r) while state is %r with %i waiting',
-            self.state_description(value), exc, self.state, self._waiting)
-        if value == STATE_EXCEPTION or exc:
-            self._logger.debug('Exception passed in with state: %r', exc)
-            self._exception = exc
-            self._state = STATE_EXCEPTION
-        else:
-            if value == self._state:
-                pass
-            elif value not in self.STATE_TRANSITIONS[self._state]:
-                raise exceptions.StateTransitionError(
-                    'Invalid state transition from {!r} to {!r}'.format(
-                        self.state, self.state_description(value)))
-            else:
-                self._logger.debug(
-                    'Transition to %r (%i) from %r (%i) after %.4f seconds',
-                    self.state_description(value), value,
-                    self.state, self._state, self.time_in_state)
-                self._state = value
-                self._state_start = self._loop.time()
+            'Set state to %i: %s while state is %i: %s - %r [%r]',
+            value, self.state_description(value), self._state, self.state,
+            self._waits, exc)
+        if value == self._state and exc == self._exception:
+            return
+        elif value != STATE_EXCEPTION \
+                and value not in self.STATE_TRANSITIONS[self._state]:
+            raise exceptions.StateTransitionError(
+                'Invalid state transition from {!r} to {!r}'.format(
+                    self.state, self.state_description(value)))
+        self._logger.debug(
+            'Transition to %i: %s from %i: %s after %.4f seconds',
+            value, self.state_description(value),
+            self._state, self.state, self.time_in_state)
+        self._exception = exc
+        self._state = value
+        self._state_start = self._loop.time()
         if self._state in self._waits:
             [self._loop.call_soon(event.set)
              for event in self._waits[self._state].values()]
 
     async def _wait_on_state(self, *args) -> int:
         """Wait on a specific state value to transition"""
-        self._waiting += 1
         wait_id, waits = time.monotonic_ns(), []
+        self._logger.debug(
+            'Waiter %i waiting on (%s) while in %i: %s',
+            wait_id, ' || '.join(
+                '{}: {}'.format(s, self.state_description(s))
+                for s in args), self._state, self.state)
         for state in args:
-            if state not in self._waits and state != self._state:
+            if state not in self._waits:
                 self._waits[state] = {}
             self._waits[state][wait_id] = asyncio.Event()
             waits.append((state, self._waits[state][wait_id]))
-        self._logger.debug(
-            'Waiter %r waiting on %s', wait_id, ', '.join(
-                ['({}) {}'.format(s, self.state_description(s[0]))
-                 for s in waits]))
         while not self._exception:
             for state, event in waits:
                 if event.is_set():
                     self._logger.debug(
-                        'Waiter %r wait on %r (%i) has finished', wait_id,
-                        self.state_description(state), state)
+                        'Waiter %r wait on %i: %s has finished [%r]', wait_id,
+                        state, self.state_description(state), self._exception)
                     self._clear_waits(wait_id)
-                    self._waiting -= 1
                     return state
             await asyncio.sleep(0.001)
+        self._clear_waits(wait_id)
         exc = self._exception
         self._exception = None
-        self._waiting -= 1
         raise exc
