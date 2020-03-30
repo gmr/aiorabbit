@@ -10,7 +10,6 @@ import typing
 from urllib import parse
 
 from pamqp import base, body, commands, frame, header
-import yarl
 
 from aiorabbit import (channel0, DEFAULT_LOCALE, DEFAULT_PRODUCT, DEFAULT_URL,
                        exceptions, message, protocol, state, types)
@@ -381,8 +380,29 @@ class Client(state.StateManager):
         self._rpc_lock = asyncio.Lock()
         self._transactional = False
         self._transport: typing.Optional[asyncio.Transport] = None
-        self._url = yarl.URL(url)
         self._set_state(STATE_DISCONNECTED)
+
+        parsed = parse.urlparse(url)
+
+        self._hostname = parsed.hostname
+        self._port = parsed.port
+        self._username = parsed.username
+        self._password = parsed.password
+        self._scheme = parsed.scheme
+        self._virtual_host = parse.unquote(parsed.path)[1:]
+        self._use_ssl = True if self._scheme == 'amqps' else False
+
+        query = parse.parse_qs(parsed.query)
+
+        temp = query.get('heartbeat')
+        self._heartbeat_interval = int(temp[-1]) if temp else None
+
+        temp = query.get('channel_max')
+        self._channel_max = int(temp[-1]) if temp else 32768
+
+        temp = query.get('connection_timeout')
+        self._connect_timeout = \
+            float(temp[-1]) if temp else socket.getdefaulttimeout()
 
     async def connect(self) -> None:
         """Connect to the RabbitMQ Server
@@ -1387,45 +1407,37 @@ class Client(state.StateManager):
     async def _connect(self) -> None:
         self._set_state(STATE_CONNECTING)
         self._logger.info('Connecting to %s://%s:%s@%s:%s/%s',
-                          self._url.scheme, self._url.user,
-                          ''.ljust(len(self._url.password), '*'),
-                          self._url.host, self._url.port,
-                          parse.quote(self._url.path[1:], ''))
-        heartbeat = self._url.query.get('heartbeat')
+                          self._scheme, self._username,
+                          ''.ljust(len(self._password), '*'),
+                          self._hostname, self._port,
+                          parse.quote(self._virtual_host, ''))
         self._channel0 = channel0.Channel0(
             self._blocked,
-            self._url.user,
-            self._url.password,
-            self._url.path[1:],
-            int(heartbeat) if heartbeat else None,
+            self._username,
+            self._password,
+            self._virtual_host,
+            self._heartbeat_interval,
             self._defaults.locale,
             self._loop,
-            int(self._url.query.get('channel_max', '32768')),
+            self._channel_max,
             self._defaults.product,
             self._on_remote_close)
         self._max_frame_size = float(self._channel0.max_frame_size)
-
-        ssl = self._url.scheme == 'amqps'
 
         future = self._loop.create_connection(
             lambda: protocol.AMQP(
                 self._on_connected,
                 self._on_disconnected,
                 self._on_frame,
-            ), self._url.host, self._url.port,
-            server_hostname=self._url.host if ssl else None,
-            ssl=ssl)
+            ), self._hostname, self._port,
+            server_hostname=self._hostname if self._use_ssl else None,
+            ssl=self._use_ssl)
         self._transport, self._protocol = await asyncio.wait_for(
             future, timeout=self._connect_timeout)
         self._max_frame_size = float(self._channel0.max_frame_size)
         if await self._channel0.open(self._transport):
             return self._set_state(STATE_OPENED)
         await self._wait_on_state(STATE_OPENED)  # To catch connection errors
-
-    @property
-    def _connect_timeout(self) -> float:
-        temp = self._url.query.get('connection_timeout', '3.0')
-        return socket.getdefaulttimeout() if temp is None else float(temp)
 
     def _execute_callback(self, callback: typing.Callable, *args) -> None:
         """Sync wrapper for invoking a sync/async callback and invoking
