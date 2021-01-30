@@ -379,6 +379,7 @@ class Client(state.StateManager):
         self._protocol: typing.Optional[asyncio.Protocol] = None
         self._publisher_confirms = False
         self._rpc_lock = asyncio.Lock()
+        self._close_lock = asyncio.Lock()
         self._transactional = False
         self._transport: typing.Optional[asyncio.Transport] = None
         self._url = yarl.URL(url)
@@ -421,17 +422,19 @@ class Client(state.StateManager):
 
     async def close(self) -> None:
         """Close the client connection to the server"""
-        if self.is_closed or not self._channel0 or not self._transport:
-            self._logger.warning('Close called when connection is not open')
-            if self._state != STATE_CLOSED:
-                self._set_state(STATE_CLOSED)
-            return
-        if self._channel_open.is_set():
-            await self._send_rpc(
-                commands.Channel.Close(200, 'Client Requested', 0, 0),
-                STATE_CHANNEL_CLOSE_SENT,
-                STATE_CHANNEL_CLOSEOK_RECEIVED)
-        await self._close()
+        async with self._close_lock:
+            if self.is_closed or not self._channel0 or not self._transport:
+                self._logger.warning(
+                    'Close called when connection is not open')
+                if self._state != STATE_CLOSED:
+                    self._set_state(STATE_CLOSED)
+                return
+            if self._channel_open.is_set():
+                await self._send_rpc(
+                    commands.Channel.Close(200, 'Client Requested', 0, 0),
+                    STATE_CHANNEL_CLOSE_SENT,
+                    STATE_CHANNEL_CLOSEOK_RECEIVED)
+            await self._close()
 
     @property
     def is_closed(self) -> bool:
