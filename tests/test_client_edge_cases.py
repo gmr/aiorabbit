@@ -36,6 +36,14 @@ class ClientCloseTestCase(testing.ClientTestCase):
         await self.client.close()
         self.assertTrue(self.client.is_closed)
 
+    @testing.async_test
+    async def test_contemporaneous_double_close(self):
+        await self.connect()
+        await asyncio.gather(
+            self.client.close(),
+            self.client.close())
+        self.assertTrue(self.client.is_closed)
+
 
 class ChannelRotationTestCase(testing.ClientTestCase):
 
