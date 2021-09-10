@@ -1592,10 +1592,9 @@ class Client(state.StateManager):
             raise_on_channel_close: bool = False) -> int:
         """Process results from Client._send_rpc and Client._wait_on_state"""
         if exc:
+            await asyncio.sleep(0.001)  # Let pending things happen
+            await self._reconnect()
             err = self._get_last_error()
-            if not isinstance(exc, self.CONNECTING_EXCEPTIONS):
-                await asyncio.sleep(0.001)  # Let pending things happen
-                await self._reconnect()
             raise exceptions.CLASS_MAPPING[err[0]](err[1])
         if result == STATE_CHANNEL_CLOSE_RECEIVED and self._last_error[0] > 0:
             await self._open_channel()
@@ -1694,6 +1693,8 @@ class Client(state.StateManager):
         try:
             result = await super()._wait_on_state(*args)
         except exceptions.AIORabbitException as exc:
+            if isinstance(exc, self.CONNECTING_EXCEPTIONS):
+                raise
             await self._post_wait_on_state(exc=exc)
         else:
             return await self._post_wait_on_state(result)
