@@ -172,5 +172,5 @@ class InvalidVHostTestCase(testing.ClientTestCase):
 
     @testing.async_test
     async def test_error_on_connect_raises(self):
-        with self.assertRaises(OSError):
+        with self.assertRaises(exceptions.NotAllowed):
             await self.connect()

@@ -346,6 +346,7 @@ class Client(state.StateManager):
         await client.close()
 
     """
+    CONNECTING_EXCEPTIONS = (exceptions.AccessRefused, exceptions.NotAllowed)
     STATE_MAP = _STATE_MAP
     STATE_TRANSITIONS = _STATE_TRANSITIONS
 
@@ -1592,7 +1593,7 @@ class Client(state.StateManager):
         """Process results from Client._send_rpc and Client._wait_on_state"""
         if exc:
             err = self._get_last_error()
-            if not isinstance(exc, exceptions.AccessRefused):
+            if not isinstance(exc, self.CONNECTING_EXCEPTIONS):
                 await asyncio.sleep(0.001)  # Let pending things happen
                 await self._reconnect()
             raise exceptions.CLASS_MAPPING[err[0]](err[1])
