@@ -128,7 +128,7 @@ class Channel0(state.StateManager):
         self._heartbeat_interval = heartbeat_interval
         self._heartbeat_timer: typing.Optional[asyncio.TimerHandle] = None
         self._last_error: typing.Tuple[int, typing.Optional[str]] = (0, None)
-        self._last_heartbeat = 0
+        self._last_heartbeat: int = 0
         self._locale = locale
         self._on_remote_close = on_remote_close
         self._password = password
@@ -208,7 +208,7 @@ class Channel0(state.StateManager):
 
     def _heartbeat_check(self):
         threshold = self._loop.time() - (self._heartbeat_interval * 2)
-        if self._last_heartbeat < threshold:
+        if 0 < self._last_heartbeat < threshold:
             msg = 'No heartbeat in {:2f} seconds'.format(
                 self._loop.time() - self._last_heartbeat)
             self._logger.critical(msg)
