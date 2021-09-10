@@ -1400,7 +1400,7 @@ class Client(state.StateManager):
             self._blocked,
             self._url.user,
             self._url.password,
-            self._url.path[1:],
+            self._url.path[1:] if self._url.path[1:] else '/',
             int(heartbeat) if heartbeat else None,
             self._defaults.locale,
             self._loop,
@@ -1459,8 +1459,12 @@ class Client(state.StateManager):
     def _on_frame(self, channel: int, value: frame.FrameTypes) -> None:
         self._last_frame = value
         if channel == 0:
-            self._channel0.process(value)
-        elif isinstance(value, commands.Basic.Ack):
+            return self._channel0.process(value)
+
+        # Reset last heartbeat timestamp since a frame was received
+        self._channel0.update_last_heartbeat()
+
+        if isinstance(value, commands.Basic.Ack):
             self._set_delivery_tag_result(value.delivery_tag, True)
             self._set_state(STATE_BASIC_ACK_RECEIVED)
         elif isinstance(value, commands.Basic.CancelOk):

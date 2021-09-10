@@ -206,6 +206,10 @@ class Channel0(state.StateManager):
                                STATE_CLOSEOK_SENT,
                                state.STATE_EXCEPTION]
 
+    def update_last_heartbeat(self) -> None:
+        """Invoked by the client whenever traffic is received"""
+        self._last_heartbeat = self._loop.time()
+
     def _heartbeat_check(self):
         threshold = self._loop.time() - (self._heartbeat_interval * 2)
         if 0 < self._last_heartbeat < threshold:
@@ -215,6 +219,8 @@ class Channel0(state.StateManager):
             self._heartbeat_timer = None
             self._on_remote_close(599, 'Too many missed heartbeats')
         else:
+            if self._heartbeat_timer:
+                self._heartbeat_timer.cancel()
             self._heartbeat_timer = self._loop.call_later(
                 self._heartbeat_interval, self._heartbeat_check)
 

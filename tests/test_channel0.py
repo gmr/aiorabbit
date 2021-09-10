@@ -204,7 +204,7 @@ class SmallerClientHeartbeatTestCase(TestCase):
 
 class HeartbeatCheckTestCase(TestCase):
 
-    HEARTBEAT_INTERVAL = 30
+    HEARTBEAT_INTERVAL = 5
 
     def test_within_range(self):
         self.loop.run_until_complete(self.open())
@@ -218,12 +218,14 @@ class HeartbeatCheckTestCase(TestCase):
     def test_too_many_missed(self):
         self.loop.run_until_complete(self.open())
         self.assert_state(channel0.STATE_OPENOK_RECEIVED)
-        self.channel0._last_heartbeat = \
-            self.loop.time() - self.HEARTBEAT_INTERVAL * 3
-        self.channel0._heartbeat_check()
-        self.assertIsNone(self.channel0._heartbeat_timer)
-        self.on_remote_close.assert_called_once_with(
-            599, 'Too many missed heartbeats')
+        current_time = self.loop.time()
+        with mock.patch.object(self.loop, 'time') as time:
+            time.return_value = current_time + (self.HEARTBEAT_INTERVAL * 4)
+            self.channel0.update_last_heartbeat()
+            self.channel0._last_heartbeat -= (self.HEARTBEAT_INTERVAL * 3)
+            self.channel0._heartbeat_check()
+            self.on_remote_close.assert_called_once_with(
+                599, 'Too many missed heartbeats')
 
 
 class InvalidFrameTestCase(TestCase):
