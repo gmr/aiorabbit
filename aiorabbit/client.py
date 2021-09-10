@@ -658,7 +658,7 @@ class Client(state.StateManager):
         if reply_to:
             self._validate_short_str('reply_to', reply_to)
         if timestamp and not isinstance(timestamp, datetime.datetime):
-            raise TypeError('reply_to must be of type datetime.datetime')
+            raise TypeError('timestamp must be of type datetime.datetime')
         if user_id:
             self._validate_short_str('user_id', user_id)
 
