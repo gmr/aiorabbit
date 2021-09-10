@@ -6,7 +6,7 @@ STATE_BAR = 0x11
 STATE_BAZ = 0x12
 
 
-class Test(state.StateManager):
+class State(state.StateManager):
 
     STATE_MAP = {
         state.STATE_UNINITIALIZED: 'Uninitialized',
@@ -35,7 +35,7 @@ class TestCase(testing.AsyncTestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.obj = Test(self.loop)
+        self.obj = State(self.loop)
 
     def assert_state(self, value):
         self.assertEqual(self.obj.state, self.obj.STATE_MAP[value])
