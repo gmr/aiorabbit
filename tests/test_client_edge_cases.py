@@ -156,3 +156,21 @@ class InvalidProtocolTestCase(testing.ClientTestCase):
     async def test_error_on_connect_raises(self):
         with self.assertRaises(OSError):
             await self.connect()
+
+
+class InvalidVHostTestCase(testing.ClientTestCase):
+
+    def setUp(self) -> None:
+        self._old_uri = os.environ['RABBITMQ_URI']
+        os.environ['RABBITMQ_URI'] = \
+            os.environ['RABBITMQ_URI'].replace('%2f', 'invalid')
+        super().setUp()
+
+    def tearDown(self) -> None:
+        os.environ['RABBITMQ_URI'] = self._old_uri
+        super().tearDown()
+
+    @testing.async_test
+    async def test_error_on_connect_raises(self):
+        with self.assertRaises(OSError):
+            await self.connect()
