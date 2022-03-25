@@ -81,9 +81,11 @@ class StateManager:
             return
         elif value != STATE_EXCEPTION \
                 and value not in self.STATE_TRANSITIONS[self._state]:
-            raise exceptions.StateTransitionError(
+            exc = exceptions.StateTransitionError(
                 'Invalid state transition from {!r} to {!r}'.format(
                     self.state, self.state_description(value)))
+            self._exception = exc
+            raise exc
         self._logger.debug(
             'Transition to %i: %s from %i: %s after %.4f seconds',
             value, self.state_description(value),

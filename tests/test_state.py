@@ -55,6 +55,8 @@ class TestCase(testing.AsyncTestCase):
         self.assert_state(state.STATE_UNINITIALIZED)
         with self.assertRaises(exceptions.StateTransitionError):
             self.obj.set_state(STATE_BAZ)
+        self.assertIsInstance(self.obj._exception,
+                              exceptions.StateTransitionError)
 
     def test_setting_state_to_same_value(self):
         self.assert_state(state.STATE_UNINITIALIZED)
