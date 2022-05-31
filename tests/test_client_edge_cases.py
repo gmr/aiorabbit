@@ -108,7 +108,7 @@ class TimeoutOnConnectTestCase(testing.ClientTestCase):
 
     def setUp(self) -> None:
         self._old_uri = os.environ['RABBITMQ_URI']
-        os.environ['RABBITMQ_URI'] = '{}?connection_timeout=0.001'.format(
+        os.environ['RABBITMQ_URI'] = '{}?connection_timeout=0.000001'.format(
             os.environ['RABBITMQ_URI'])
         super().setUp()
 
