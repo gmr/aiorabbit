@@ -74,7 +74,7 @@ class StateManager:
     def _set_state(self, value: int,
                    exc: typing.Optional[Exception] = None) -> None:
         self._logger.debug(
-            'Set state to %i: %s while state is %i: %s - %r [%r]',
+            'Set state to 0x%x: %s while state is 0x%x: %s - %r [%r]',
             value, self.state_description(value), self._state, self.state,
             self._waits, exc)
         if value == self._state and exc == self._exception:
@@ -87,7 +87,7 @@ class StateManager:
             self._exception = exc
             raise exc
         self._logger.debug(
-            'Transition to %i: %s from %i: %s after %.4f seconds',
+            'Transition to 0x%x: %s from 0x%x: %s after %.4f seconds',
             value, self.state_description(value),
             self._state, self.state, self.time_in_state)
         self._exception = exc
@@ -101,7 +101,7 @@ class StateManager:
         """Wait on a specific state value to transition"""
         wait_id, waits = time.monotonic_ns(), []
         self._logger.debug(
-            'Waiter %i waiting on (%s) while in %i: %s',
+            'Waiter %i waiting on (%s) while in 0x%x: %s',
             wait_id, ' || '.join(
                 '{}: {}'.format(s, self.state_description(s))
                 for s in args), self._state, self.state)
@@ -114,8 +114,9 @@ class StateManager:
             for state, event in waits:
                 if event.is_set():
                     self._logger.debug(
-                        'Waiter %r wait on %i: %s has finished [%r]', wait_id,
-                        state, self.state_description(state), self._exception)
+                        'Waiter %r wait on 0x%x: %s has finished [%r]',
+                        wait_id, state, self.state_description(state),
+                        self._exception)
                     self._clear_waits(wait_id)
                     return state
             await asyncio.sleep(0.001)
