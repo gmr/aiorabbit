@@ -6,6 +6,7 @@ import datetime
 import math
 import re
 import socket
+import ssl
 import typing
 from urllib import parse
 
@@ -312,7 +313,7 @@ class Client(state.StateManager):
     This client provides a streamlined interface for interacting with RabbitMQ.
 
     Instead of manually managing your channels, the client will do so for you.
-    In addition if you are disconnected remotely due to an error, it will
+    In addition, if you are disconnected remotely due to an error, it will
     attempt to automatically reconnect. Any non-connection related exception
     should leave you in a state where you can continue working with RabbitMQ,
     even if it disconnected the client as part of the exception.
@@ -321,7 +322,7 @@ class Client(state.StateManager):
 
         For the most part, the client directly implements the AMQ model
         combining class and method RPC calls as a function. For example,
-        ``Basic.Ack`` is implemented as :meth:`Client.basic_ack`. However some
+        ``Basic.Ack`` is implemented as :meth:`Client.basic_ack`. However, some
         methods, such as :meth:`Client.consume`, :meth:`Client.publish`, and
         :meth:`Client.qos_prefetch` provide a higher-level and more opinionated
         implementation than their respected AMQ RPC methods.
@@ -355,7 +356,8 @@ class Client(state.StateManager):
                  locale: str = DEFAULT_LOCALE,
                  product: str = DEFAULT_PRODUCT,
                  loop: typing.Optional[asyncio.AbstractEventLoop] = None,
-                 on_return: typing.Optional[typing.Callable] = None):
+                 on_return: typing.Optional[typing.Callable] = None,
+                 ssl_context: typing.Optional[ssl.SSLContext] = None):
         super().__init__(loop or asyncio.get_running_loop())
         self._blocked = asyncio.Event()
         self._block_write = asyncio.Event()
@@ -381,6 +383,7 @@ class Client(state.StateManager):
         self._publisher_confirms = False
         self._rpc_lock = asyncio.Lock()
         self._close_lock = asyncio.Lock()
+        self._ssl_context = ssl_context
         self._transactional = False
         self._transport: typing.Optional[asyncio.Transport] = None
         self._url = yarl.URL(url)
@@ -1416,7 +1419,7 @@ class Client(state.StateManager):
             self._defaults.product,
             self._on_remote_close)
         self._max_frame_size = float(self._channel0.max_frame_size)
-        ssl = self._url.scheme == 'amqps'
+        ssl_enabled = self._url.scheme == 'amqps'
         future = self._loop.create_connection(
             lambda: protocol.AMQP(
                 self._on_connected,
@@ -1424,7 +1427,7 @@ class Client(state.StateManager):
                 self._on_frame,
             ), self._url.host, port,
             server_hostname=self._url.host if ssl else None,
-            ssl=ssl)
+            ssl=self._ssl_context or ssl_enabled)
         self._transport, self._protocol = await asyncio.wait_for(
             future, timeout=self._connect_timeout)
         self._max_frame_size = float(self._channel0.max_frame_size)
