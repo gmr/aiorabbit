@@ -12,9 +12,9 @@ echo "Integration test host: ${TEST_HOST}"
 get_exposed_port() {
   if [ -z $3 ]
   then
-    docker-compose port $1 $2 | cut -d: -f2
+    docker compose port $1 $2 | cut -d: -f2
   else
-    docker-compose port --index=$3 $1 $2 | cut -d: -f2
+    docker compose port --index=$3 $1 $2 | cut -d: -f2
   fi
 }
 
@@ -27,7 +27,7 @@ report_done() {
 }
 
 wait_for_healthy_containers() {
-  IDs=$(docker-compose ps -q | paste -sd " " -)
+  IDs=$(docker compose ps -q | paste -sd " " -)
   report_start "${1} containers to report healthy"
   counter="0"
   while true
@@ -61,8 +61,8 @@ rm -rf build
 mkdir -p build build/data
 
 # Stop any running instances and clean up after them, then pull images
-docker-compose down --volumes --remove-orphans
-docker-compose up -d --quiet-pull
+docker compose down --volumes --remove-orphans
+docker compose up -d --quiet-pull
 
 wait_for_healthy_containers 1
 
@@ -75,4 +75,4 @@ export RABBITMQ_URI=amqp://guest:guest@${TEST_HOST}:${RABBITMQ_PORT}/%2f
 export NOSE_LOGFORMAT="%(levelname) -10s %(asctime)s %(name) -25s %(funcName) -20s: %(message)s"
 EOF
 
-printf "\nBootstrap complete\n\nDon't forget to \". build/test-environment\"\n"
+printf "\nBootstrap complete\n"

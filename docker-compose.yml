@@ -1,7 +1,7 @@
-version: '3.3'
+version: '3'
 services:
   rabbitmq:
-    image: rabbitmq:3.8-management
+    image: rabbitmq:3.12-management-alpine
     healthcheck:
       test: /opt/rabbitmq/sbin/rabbitmqctl node_health_check
       interval: 30s

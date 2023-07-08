@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 3
     services:
       rabbitmq:
-        image: rabbitmq:3.8
+        image: rabbitmq:3.12
         options: >-
           --health-cmd "/opt/rabbitmq/sbin/rabbitmqctl node_health_check"
           --health-interval 10s
