@@ -55,7 +55,7 @@ http://aiorabbit.readthedocs.org
 
 License
 -------
-Copyright (c) 2019-2021 Gavin M. Roy
+Copyright (c) 2019-2023 Gavin M. Roy
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
