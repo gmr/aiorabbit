@@ -438,6 +438,11 @@ class Client(state.StateManager):
             await self._close()
 
     @property
+    def is_connected(self) -> bool:
+        """Indicates if the connection is available"""
+        return not self.is_closed
+
+    @property
     def is_closed(self) -> bool:
         """Indicates if the connection is closed or closing"""
         return (not self._channel0
@@ -1390,11 +1395,14 @@ class Client(state.StateManager):
 
     async def _connect(self) -> None:
         self._set_state(STATE_CONNECTING)
-        self._logger.info('Connecting to %s://%s:%s@%s:%s/%s',
-                          self._url.scheme, self._url.user,
-                          ''.ljust(len(self._url.password), '*'),
-                          self._url.host, self._url.port,
-                          parse.quote(self._url.path[1:], ''))
+        port = self._url.port
+        if port is None:
+            port = 5671 if self._url.scheme == 'amqps' else 5672
+        self._logger.info(
+            'Connecting to %s://%s:%s@%s:%s/%s',
+            self._url.scheme, self._url.user,
+            ''.ljust(len(self._url.password), '*'),
+            self._url.host, port, parse.quote(self._url.path[1:], ''))
         heartbeat = self._url.query.get('heartbeat')
         self._channel0 = channel0.Channel0(
             self._blocked,
@@ -1408,15 +1416,13 @@ class Client(state.StateManager):
             self._defaults.product,
             self._on_remote_close)
         self._max_frame_size = float(self._channel0.max_frame_size)
-
         ssl = self._url.scheme == 'amqps'
-
         future = self._loop.create_connection(
             lambda: protocol.AMQP(
                 self._on_connected,
                 self._on_disconnected,
                 self._on_frame,
-            ), self._url.host, self._url.port,
+            ), self._url.host, port,
             server_hostname=self._url.host if ssl else None,
             ssl=ssl)
         self._transport, self._protocol = await asyncio.wait_for(

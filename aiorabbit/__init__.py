@@ -9,7 +9,7 @@ from aiorabbit.__version__ import version
 
 DEFAULT_LOCALE = 'en-US'
 DEFAULT_PRODUCT = 'aiorabbit/{}'.format(version)
-DEFAULT_URL = 'amqp://guest:guest@localhost:5672/%2f'
+DEFAULT_URL = 'amqp://guest:guest@localhost'
 
 LOGGER = logging.getLogger('aiorabbit')
 
