@@ -1426,7 +1426,7 @@ class Client(state.StateManager):
                 self._on_disconnected,
                 self._on_frame,
             ), self._url.host, port,
-            server_hostname=self._url.host if ssl else None,
+            server_hostname=self._url.host if ssl_enabled else None,
             ssl=self._ssl_context or ssl_enabled)
         self._transport, self._protocol = await asyncio.wait_for(
             future, timeout=self._connect_timeout)
