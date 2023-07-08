@@ -7,7 +7,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags') && github.repository == 'gmr/aiorabbit'
-    container: python:3.18-alpine
+    container: python:3.11-alpine
     steps:
       - name: Checkout repository
         uses: actions/checkout@v1
