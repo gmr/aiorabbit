@@ -1,10 +1,10 @@
 version: '3'
 services:
   rabbitmq:
-    image: rabbitmq:3.12-management-alpine
+    image: rabbitmq:3.11.16-management-alpine
     healthcheck:
-      test: /opt/rabbitmq/sbin/rabbitmqctl node_health_check
-      interval: 30s
+      test: rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms
+      interval: 15s
       timeout: 10s
       retries: 3
     ports:
