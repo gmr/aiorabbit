@@ -184,8 +184,9 @@ class Channel0(state.StateManager):
         return result == STATE_OPENOK_RECEIVED
 
     async def close(self, code=200) -> None:
-        self._heartbeat_timer.cancel()
-        self._heartbeat_timer = None
+        if self._heartbeat_timer is not None:
+            self._heartbeat_timer.cancel()
+            self._heartbeat_timer = None
         self._transport.write(frame.marshal(
             commands.Connection.Close(code, 'Client Requested', 0, 0), 0))
         self._set_state(STATE_CLOSE_SENT)
