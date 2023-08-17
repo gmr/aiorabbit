@@ -217,8 +217,17 @@ class NoTransactionError(AIORabbitException):
     """
 
 
+class UnknownError(AIORabbitException):
+    """Unexplainable edge case exception.
+
+    Please provide tracebacks if you encounter this.
+
+    """
+
+
 #  Error code to class mapping
 CLASS_MAPPING = {
+    0: UnknownError,
     311: ContentTooLarge,
     313: NoConsumers,
     403: AccessRefused,
