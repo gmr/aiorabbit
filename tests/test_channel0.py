@@ -178,6 +178,7 @@ class NoHeartbeatTestCase(TestCase):
         self.loop.run_until_complete(self.open())
         self.assert_state(channel0.STATE_OPENOK_RECEIVED)
         self.assertEqual(self.channel0._heartbeat_interval, 0)
+        self.assertEqual(self.channel0._heartbeat_timer, None)
 
 
 class NoClientHeartbeatTestCase(TestCase):
@@ -198,6 +199,7 @@ class SmallerClientHeartbeatTestCase(TestCase):
 
     def test_negotiated_interval(self):
         self.loop.run_until_complete(self.open())
+        self.channel0.close(599)
         self.assert_state(channel0.STATE_OPENOK_RECEIVED)
         self.assertEqual(self.channel0._heartbeat_interval, 10)
 

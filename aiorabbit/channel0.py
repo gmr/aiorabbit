@@ -194,8 +194,9 @@ class Channel0(state.StateManager):
 
     def reset(self):
         self._logger.debug('Resetting channel0')
-        self._heartbeat_timer.cancel()
-        self._heartbeat_timer = None
+        if self._heartbeat_timer is not None:
+            self._heartbeat_timer.cancel()
+            self._heartbeat_timer = None
         self._reset_state(state.STATE_UNINITIALIZED)
         self._last_heartbeat = 0
         self._transport: typing.Optional[asyncio.Transport] = None

@@ -171,6 +171,11 @@ class Message:
         return b''.join([b.value for b in self.body_frames])
 
     @property
+    def body_size(self) -> int:
+        """Return the current size of received body data"""
+        return sum(len(b.value) for b in self.body_frames)
+
+    @property
     def is_complete(self):
         #  Used when receiving frames from RabbitMQ
-        return len(self) == self.header.body_size
+        return self.body_size == self.header.body_size
