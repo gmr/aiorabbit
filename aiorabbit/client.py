@@ -720,7 +720,9 @@ class Client(state.StateManager):
             if result == STATE_CHANNEL_CLOSE_RECEIVED:
                 del self._delivery_tags[delivery_tag]
                 err = self._get_last_error()
-                raise exceptions.CLASS_MAPPING[err[0]](err[1])
+                exc_class = exceptions.CLASS_MAPPING.get(
+                    err[0], exceptions.UnknownError)
+                raise exc_class(err[1])
             else:
                 await self._delivery_tags[delivery_tag].wait()
                 result = self._confirmation_result[delivery_tag]
@@ -1466,9 +1468,9 @@ class Client(state.StateManager):
                     'Socket closed' if not exc else str(exc)))
 
     def _on_frame(self, channel: int, value: frame.FrameTypes) -> None:
-        self._last_frame = value
         if channel == 0:
             return self._channel0.process(value)
+        self._last_frame = value
 
         # Reset last heartbeat timestamp since a frame was received
         self._channel0.update_last_heartbeat()
@@ -1608,13 +1610,17 @@ class Client(state.StateManager):
             await asyncio.sleep(0.001)  # Let pending things happen
             await self._reconnect()
             err = self._get_last_error()
-            raise exceptions.CLASS_MAPPING[err[0]](err[1])
+            exc_class = exceptions.CLASS_MAPPING.get(
+                err[0], exceptions.UnknownError)
+            raise exc_class(err[1])
         if result == STATE_CHANNEL_CLOSE_RECEIVED and self._last_error[0] > 0:
             await self._open_channel()
             await asyncio.sleep(0.001)  # Sleep to let pending things happen
             if raise_on_channel_close:
                 err = self._get_last_error()
-                raise exceptions.CLASS_MAPPING[err[0]](err[1])
+                exc_class = exceptions.CLASS_MAPPING.get(
+                    err[0], exceptions.UnknownError)
+                raise exc_class(err[1])
             self._logger.warning('Channel was closed due to an error (%i) %s',
                                  *self._last_error)
         return result
