@@ -9,7 +9,7 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags') && github.repository == 'gmr/aiorabbit'
     permissions:
       id-token: write
-    container: python:3.13-alpine
+    container: python:3.13
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
