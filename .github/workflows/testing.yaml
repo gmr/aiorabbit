@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install OS dependencies
-        run: apk --update add gcc make musl-dev linux-headers
+        run: apk --update add bash curl gcc git gnupg make musl-dev linux-headers
 
       - name: Install testing dependencies
         run: pip3 --no-cache-dir install -e '.[test]'
