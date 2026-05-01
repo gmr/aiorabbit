@@ -4,17 +4,33 @@ on:
     branches-ignore: ["*"]
     tags: ["*"]
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags') && github.repository == 'gmr/aiorabbit'
-    permissions:
-      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Install wheel
+      - name: Install build dependencies
         run: pip3 install build wheel
       - name: Build package
         run: python3 -m build
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
       - name: Publish package
         uses: pypa/gh-action-pypi-publish@release/v1
