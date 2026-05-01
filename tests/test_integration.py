@@ -112,7 +112,7 @@ class ReconnectPublisherConfirmsTestCase(testing.ClientTestCase):
         await self.connect()
         await self.client.confirm_select()
         self.assertTrue(self.client._publisher_confirms)
-        with self.assertRaises(exceptions.CommandInvalid):
+        with self.assertRaises(exceptions.PreconditionFailed):
             await self.client.exchange_declare(self.uuid4(), self.uuid4())
         self.assertTrue(self.client._publisher_confirms)
 

@@ -32,7 +32,7 @@ class ExchangeTestCase(testing.ClientTestCase):
     @testing.async_test
     async def test_exchange_declare_invalid_exchange_type(self):
         await self.connect()
-        with self.assertRaises(exceptions.CommandInvalid):
+        with self.assertRaises(exceptions.PreconditionFailed):
             await self.client.exchange_declare(self.uuid4(), self.uuid4())
         self.assertEqual(self.client.state, 'Channel Open')
         # Ensure a command will properly work after the error

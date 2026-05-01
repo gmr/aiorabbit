@@ -118,6 +118,10 @@ class StateManager:
                         wait_id, state, self.state_description(state),
                         self._exception)
                     self._clear_waits(wait_id)
+                    if self._exception:
+                        exc = self._exception
+                        self._exception = None
+                        raise exc
                     return state
             if self._exception:
                 self._clear_waits(wait_id)
