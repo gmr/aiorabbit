@@ -68,7 +68,7 @@ class StateManager:
             self.state_description(value), self.state, self._waits)
         self._state = value
         self._state_start = self._loop.time()
-        self._exc = None
+        self._exception = None
         self._waits = {}
 
     def _set_state(self, value: int,
@@ -110,7 +110,7 @@ class StateManager:
                 self._waits[state] = {}
             self._waits[state][wait_id] = asyncio.Event()
             waits.append((state, self._waits[state][wait_id]))
-        while not self._exception:
+        while True:
             for state, event in waits:
                 if event.is_set():
                     self._logger.debug(
@@ -119,8 +119,9 @@ class StateManager:
                         self._exception)
                     self._clear_waits(wait_id)
                     return state
+            if self._exception:
+                self._clear_waits(wait_id)
+                exc = self._exception
+                self._exception = None
+                raise exc
             await asyncio.sleep(0.001)
-        self._clear_waits(wait_id)
-        exc = self._exception
-        self._exception = None
-        raise exc

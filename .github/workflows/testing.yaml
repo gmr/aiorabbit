@@ -14,9 +14,9 @@ jobs:
     timeout-minutes: 3
     services:
       rabbitmq:
-        image: rabbitmq:3.12
+        image: rabbitmq:3.13
         options: >-
-          --health-cmd "/opt/rabbitmq/sbin/rabbitmqctl node_health_check"
+          --health-cmd "rabbitmq-diagnostics check_port_connectivity"
           --health-interval 10s
           --health-timeout 10s
           --health-retries 5
@@ -25,12 +25,12 @@ jobs:
           - 15672
     strategy:
       matrix:
-        python: ["3.7", "3.8", "3.9", "3.10", "3.11"]
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
     container:
       image: python:${{ matrix.python }}-alpine
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
 
       - name: Install OS dependencies
         run: apk --update add gcc make musl-dev linux-headers
@@ -55,7 +55,7 @@ jobs:
         run: coverage report && coverage xml
 
       - name: Upload Coverage
-        uses: codecov/codecov-action@v1.0.2
+        uses: codecov/codecov-action@v4
         if: github.event_name == 'push' && github.repository == 'gmr/aiorabbit'
         with:
           token: ${{secrets.CODECOV_TOKEN}}

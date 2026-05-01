@@ -7,10 +7,10 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags') && github.repository == 'gmr/aiorabbit'
-    container: python:3.11-alpine
+    container: python:3.13-alpine
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
       - name: Install wheel
         run: pip3 install build wheel
       - name: Build package

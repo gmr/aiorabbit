@@ -5,7 +5,6 @@ import dataclasses
 import datetime
 import math
 import re
-import socket
 import ssl
 import typing
 from urllib import parse
@@ -553,15 +552,17 @@ class Client(state.StateManager):
         try:
             while not self.is_closed:
                 try:
-                    msg = messages.get_nowait()
-                except asyncio.QueueEmpty:
-                    await asyncio.sleep(0.01)
+                    msg = await asyncio.wait_for(
+                        messages.get(), timeout=0.1)
+                except asyncio.TimeoutError:
+                    continue
                 else:
                     yield msg
         finally:
             if self._exception:
                 raise self._exception
-            await self.basic_cancel(consumer_tag)
+            if not self.is_closed:
+                await self.basic_cancel(consumer_tag)
 
     async def publish(self,
                       exchange: str = 'amq.direct',
@@ -658,9 +659,9 @@ class Client(state.StateManager):
             self._validate_short_str('message_type', message_type)
         if priority is not None:
             if not isinstance(priority, int):
-                raise TypeError('delivery_mode must be of type int')
-            elif not 0 < priority < 256:
-                raise ValueError('priority must be between 0 and 256')
+                raise TypeError('priority must be of type int')
+            elif not 0 <= priority <= 255:
+                raise ValueError('priority must be between 0 and 255')
         if message_type:
             self._validate_short_str('message_type', message_type)
         if reply_to:
@@ -719,7 +720,9 @@ class Client(state.StateManager):
             if result == STATE_CHANNEL_CLOSE_RECEIVED:
                 del self._delivery_tags[delivery_tag]
                 err = self._get_last_error()
-                raise exceptions.CLASS_MAPPING[err[0]](err[1])
+                exc_class = exceptions.CLASS_MAPPING.get(
+                    err[0], exceptions.UnknownError)
+                raise exc_class(err[1])
             else:
                 await self._delivery_tags[delivery_tag].wait()
                 result = self._confirmation_result[delivery_tag]
@@ -1437,8 +1440,7 @@ class Client(state.StateManager):
 
     @property
     def _connect_timeout(self) -> float:
-        temp = self._url.query.get('connection_timeout', '3.0')
-        return socket.getdefaulttimeout() if temp is None else float(temp)
+        return float(self._url.query.get('connection_timeout', '3.0'))
 
     def _execute_callback(self, callback: typing.Callable, *args) -> None:
         """Sync wrapper for invoking a sync/async callback and invoking
@@ -1461,14 +1463,14 @@ class Client(state.StateManager):
         self._logger.debug('Disconnected: %r', exc)
         if not self.is_closed:
             self._set_state(
-                STATE_CLOSED,
+                state.STATE_EXCEPTION,
                 exceptions.ConnectionClosedException(
                     'Socket closed' if not exc else str(exc)))
 
     def _on_frame(self, channel: int, value: frame.FrameTypes) -> None:
-        self._last_frame = value
         if channel == 0:
             return self._channel0.process(value)
+        self._last_frame = value
 
         # Reset last heartbeat timestamp since a frame was received
         self._channel0.update_last_heartbeat()
@@ -1578,9 +1580,9 @@ class Client(state.StateManager):
             self._set_state(
                 STATE_CLOSED, exceptions.ConnectionClosedException(reply_text))
         else:
-            self._set_state(
-                state.STATE_EXCEPTION,
-                exceptions.CLASS_MAPPING[reply_code](reply_text))
+            exc_class = exceptions.CLASS_MAPPING.get(
+                reply_code, exceptions.UnknownError)
+            self._set_state(state.STATE_EXCEPTION, exc_class(reply_text))
 
     async def _open_channel(self) -> None:
         self._set_state(STATE_OPENING_CHANNEL)
@@ -1608,13 +1610,17 @@ class Client(state.StateManager):
             await asyncio.sleep(0.001)  # Let pending things happen
             await self._reconnect()
             err = self._get_last_error()
-            raise exceptions.CLASS_MAPPING[err[0]](err[1])
+            exc_class = exceptions.CLASS_MAPPING.get(
+                err[0], exceptions.UnknownError)
+            raise exc_class(err[1])
         if result == STATE_CHANNEL_CLOSE_RECEIVED and self._last_error[0] > 0:
             await self._open_channel()
             await asyncio.sleep(0.001)  # Sleep to let pending things happen
             if raise_on_channel_close:
                 err = self._get_last_error()
-                raise exceptions.CLASS_MAPPING[err[0]](err[1])
+                exc_class = exceptions.CLASS_MAPPING.get(
+                    err[0], exceptions.UnknownError)
+                raise exc_class(err[1])
             self._logger.warning('Channel was closed due to an error (%i) %s',
                                  *self._last_error)
         return result
@@ -1662,9 +1668,12 @@ class Client(state.StateManager):
         return await self._post_wait_on_state(result, exc, True)
 
     def _set_delivery_tag_result(self, delivery_tag: int, ack: bool):
+        if not self._delivery_tags:
+            return
         for tag in range(min(self._delivery_tags.keys()), delivery_tag + 1):
-            self._confirmation_result[tag] = ack
-            self._delivery_tags[tag].set()
+            if tag in self._delivery_tags:
+                self._confirmation_result[tag] = ack
+                self._delivery_tags[tag].set()
 
     @staticmethod
     def _validate_bool(name: str, value: typing.Any) -> None:
