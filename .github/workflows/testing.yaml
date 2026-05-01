@@ -52,13 +52,4 @@ jobs:
         run: coverage run
 
       - name: Output coverage
-        run: coverage report && coverage xml
-
-      - name: Upload Coverage
-        uses: codecov/codecov-action@v5
-        if: github.event_name == 'push' && github.repository == 'gmr/aiorabbit'
-        with:
-          token: ${{secrets.CODECOV_TOKEN}}
-          files: build/coverage.xml
-          flags: unittests
-          fail_ci_if_error: true
+        run: coverage report
