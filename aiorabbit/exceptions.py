@@ -244,5 +244,6 @@ CLASS_MAPPING = {
     506: ResourceError,
     530: NotAllowed,
     540: NotImplemented,
-    541: InternalError
+    541: InternalError,
+    599: ConnectionClosedException,
 }
