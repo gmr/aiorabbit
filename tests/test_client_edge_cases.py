@@ -3,7 +3,7 @@ import os
 
 from pamqp import base, commands
 
-from aiorabbit import client, exceptions, state
+from aiorabbit import channel0, client, exceptions, state
 from . import testing
 
 
@@ -174,3 +174,64 @@ class InvalidVHostTestCase(testing.ClientTestCase):
     async def test_error_on_connect_raises(self):
         with self.assertRaises(exceptions.NotAllowed):
             await self.connect()
+
+
+class ReconnectAfterWedgedStateTestCase(testing.ClientTestCase):
+    """A client that is closed but left in a non-idle state must still be
+    able to reconnect. See https://github.com/gmr/aiorabbit/issues/24
+
+    """
+    @testing.async_test
+    async def test_reconnect_after_disconnect_skips_exception_state(self):
+        """``_on_disconnected`` is a no-op when ``is_closed`` is already
+        ``True``, leaving ``_state`` wherever the last operation left it.
+
+        """
+        await self.connect()
+        self.client._set_state(client.STATE_MESSAGE_PUBLISHED)
+        self.client._channel0._state = channel0.STATE_CLOSEOK_SENT
+        self.assertTrue(self.client.is_closed)
+        self.client._on_disconnected(None)
+        self.assert_state(client.STATE_MESSAGE_PUBLISHED)
+        await self.client.connect()
+        self.assert_state(client.STATE_CHANNEL_OPENOK_RECEIVED)
+
+    @testing.async_test
+    async def test_reconnect_after_remote_close_exception(self):
+        """``STATE_EXCEPTION`` has no transition to ``STATE_CONNECTING``"""
+        await self.connect()
+        self.client._on_remote_close(320, 'CONNECTION_FORCED - broker forced')
+        self.assert_state(state.STATE_EXCEPTION)
+        self.assertTrue(self.client.is_closed)
+        await self.client.connect()
+        self.assert_state(client.STATE_CHANNEL_OPENOK_RECEIVED)
+
+    @testing.async_test
+    async def test_reconnect_from_state_without_path_to_closed(self):
+        """``STATE_CONTENT_HEADER_RECEIVED`` can only transition to
+        ``STATE_CONTENT_BODY_RECEIVED``, so ``close()`` can not repair it.
+
+        """
+        await self.connect()
+        self.client._set_state(client.STATE_BASIC_DELIVER_RECEIVED)
+        self.client._set_state(client.STATE_CONTENT_HEADER_RECEIVED)
+        self.client._channel0._state = channel0.STATE_CLOSEOK_SENT
+        self.assertTrue(self.client.is_closed)
+        await self.client.connect()
+        self.assert_state(client.STATE_CHANNEL_OPENOK_RECEIVED)
+
+    @testing.async_test
+    async def test_publisher_confirms_survive_the_reset(self):
+        """``_reset()`` clears ``_publisher_confirms``, which would silently
+        stop ``publish()`` from waiting on an ack.
+
+        """
+        await self.connect()
+        await self.client.confirm_select()
+        self.client._set_state(client.STATE_MESSAGE_PUBLISHED)
+        self.client._channel0._state = channel0.STATE_CLOSEOK_SENT
+        self.assertTrue(self.client.is_closed)
+        await self.client.connect()
+        self.assertTrue(self.client._publisher_confirms)
+        self.assertTrue(await self.client.publish(
+            '', self.uuid4(), self.uuid4()))
