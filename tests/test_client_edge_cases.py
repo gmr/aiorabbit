@@ -219,3 +219,19 @@ class ReconnectAfterWedgedStateTestCase(testing.ClientTestCase):
         self.assertTrue(self.client.is_closed)
         await self.client.connect()
         self.assert_state(client.STATE_CHANNEL_OPENOK_RECEIVED)
+
+    @testing.async_test
+    async def test_publisher_confirms_survive_the_reset(self):
+        """``_reset()`` clears ``_publisher_confirms``, which would silently
+        stop ``publish()`` from waiting on an ack.
+
+        """
+        await self.connect()
+        await self.client.confirm_select()
+        self.client._set_state(client.STATE_MESSAGE_PUBLISHED)
+        self.client._channel0._state = channel0.STATE_CLOSEOK_SENT
+        self.assertTrue(self.client.is_closed)
+        await self.client.connect()
+        self.assertTrue(self.client._publisher_confirms)
+        self.assertTrue(await self.client.publish(
+            '', self.uuid4(), self.uuid4()))

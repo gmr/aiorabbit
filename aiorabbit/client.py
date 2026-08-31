@@ -411,10 +411,12 @@ class Client(state.StateManager):
             when the client fails to negotiate with the server
 
         """
+        publisher_confirms = False
         if self.is_closed and self._state not in [STATE_DISCONNECTED,
                                                   STATE_CLOSED]:
             # The connection dropped without the state being updated, which
             # leaves no legal transition to STATE_CONNECTING (#24)
+            publisher_confirms = self._publisher_confirms
             self._reset()
         try:
             await self._connect()
@@ -427,6 +429,8 @@ class Client(state.StateManager):
             self._logger.critical('Failed to connect to RabbitMQ: %s', exc)
             raise exc
         await self._open_channel()
+        if publisher_confirms:  # Cleared by the reset above, as in _reconnect
+            await self.confirm_select()
 
     async def close(self) -> None:
         """Close the client connection to the server"""
