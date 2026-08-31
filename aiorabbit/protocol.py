@@ -26,7 +26,7 @@ class AMQP(asyncio.Protocol):
         self.on_connected()
 
     def connection_lost(self, exc: typing.Optional[Exception]) -> None:
-        self.on_disconnected(exc)
+        self.on_disconnected(self, exc)
 
     def data_received(self, data: bytes) -> None:
         self.buffer += data

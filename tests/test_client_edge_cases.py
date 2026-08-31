@@ -182,16 +182,28 @@ class ReconnectAfterWedgedStateTestCase(testing.ClientTestCase):
 
     """
     @testing.async_test
-    async def test_reconnect_after_disconnect_skips_exception_state(self):
-        """``_on_disconnected`` is a no-op when ``is_closed`` is already
-        ``True``, leaving ``_state`` wherever the last operation left it.
+    async def test_reconnect_after_disconnect_while_published(self):
+        """A drop recorded while ``is_closed`` is already ``True`` leaves
+        ``STATE_EXCEPTION``, which has no transition to
+        ``STATE_CONNECTING``.
 
         """
         await self.connect()
         self.client._set_state(client.STATE_MESSAGE_PUBLISHED)
         self.client._channel0._state = channel0.STATE_CLOSEOK_SENT
         self.assertTrue(self.client.is_closed)
-        self.client._on_disconnected(None)
+        self.client._on_disconnected(self.client._protocol, None)
+        self.assert_state(state.STATE_EXCEPTION)
+        await self.client.connect()
+        self.assert_state(client.STATE_CHANNEL_OPENOK_RECEIVED)
+
+    @testing.async_test
+    async def test_reconnect_when_state_was_never_updated(self):
+        """A stale disconnect is ignored, so nothing moves ``_state``"""
+        await self.connect()
+        self.client._set_state(client.STATE_MESSAGE_PUBLISHED)
+        self.client._channel0._state = channel0.STATE_CLOSEOK_SENT
+        self.client._on_disconnected(object(), None)
         self.assert_state(client.STATE_MESSAGE_PUBLISHED)
         await self.client.connect()
         self.assert_state(client.STATE_CHANNEL_OPENOK_RECEIVED)
@@ -235,3 +247,61 @@ class ReconnectAfterWedgedStateTestCase(testing.ClientTestCase):
         self.assertTrue(self.client._publisher_confirms)
         self.assertTrue(await self.client.publish(
             '', self.uuid4(), self.uuid4()))
+
+
+class OnDisconnectedStateTestCase(testing.ClientTestCase):
+    """A socket that drops must be recorded in the state, even when
+    ``is_closed`` is already ``True``. See
+    https://github.com/gmr/aiorabbit/issues/26
+
+    """
+    @testing.async_test
+    async def test_exception_recorded_when_channel0_is_closed(self):
+        await self.connect()
+        self.client._set_state(client.STATE_MESSAGE_PUBLISHED)
+        self.client._channel0._state = channel0.STATE_CLOSEOK_SENT
+        self.assertTrue(self.client.is_closed)
+        self.client._on_disconnected(self.client._protocol, None)
+        self.assert_state(state.STATE_EXCEPTION)
+        self.assertIsInstance(
+            self.client.exception, exceptions.ConnectionClosedException)
+
+    @testing.async_test
+    async def test_exception_recorded_when_transport_is_cleared(self):
+        await self.connect()
+        self.client._set_state(client.STATE_MESSAGE_PUBLISHED)
+        self.client._transport = None
+        self.assertTrue(self.client.is_closed)
+        self.client._on_disconnected(
+            self.client._protocol,
+            OSError('Connection reset by peer'))
+        self.assert_state(state.STATE_EXCEPTION)
+        self.assertEqual(
+            str(self.client.exception), 'Connection reset by peer')
+
+    @testing.async_test
+    async def test_remote_close_exception_is_not_overwritten(self):
+        """The broker's reason is more useful than 'Socket closed'"""
+        await self.connect()
+        self.client._on_remote_close(320, 'CONNECTION_FORCED - broker forced')
+        self.client._on_disconnected(self.client._protocol, None)
+        self.assert_state(state.STATE_EXCEPTION)
+        self.assertIsInstance(
+            self.client.exception, exceptions.ConnectionForced)
+
+    @testing.async_test
+    async def test_stale_protocol_disconnect_is_ignored(self):
+        """The old socket closing must not poison a new connection"""
+        await self.connect()
+        self.client._on_disconnected(object(), OSError('Stale socket'))
+        self.assert_state(client.STATE_CHANNEL_OPENOK_RECEIVED)
+        self.assertIsNone(self.client.exception)
+
+    @testing.async_test
+    async def test_client_requested_close_is_not_an_exception(self):
+        await self.connect()
+        await self.client.close()
+        self.assert_state(client.STATE_CLOSED)
+        self.client._on_disconnected(self.client._protocol, None)
+        self.assert_state(client.STATE_CLOSED)
+        self.assertIsNone(self.client.exception)

@@ -210,7 +210,7 @@ class ContextManagerConsumeTestCase(ConsumeTestCase):
                     messages.remove(message.body)
                     await rabbitmq.basic_ack(message.delivery_tag)
                     if not messages:
-                        rabbitmq._on_disconnected(None)
+                        rabbitmq._on_disconnected(rabbitmq._protocol, None)
 
         with self.assertRaises(exceptions.ConnectionClosedException):
             await consume_messages()
