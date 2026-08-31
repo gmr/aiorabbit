@@ -411,6 +411,11 @@ class Client(state.StateManager):
             when the client fails to negotiate with the server
 
         """
+        if self.is_closed and self._state not in [STATE_DISCONNECTED,
+                                                  STATE_CLOSED]:
+            # The connection dropped without the state being updated, which
+            # leaves no legal transition to STATE_CONNECTING (#24)
+            self._reset()
         try:
             await self._connect()
         except (OSError,
