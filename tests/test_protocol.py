@@ -35,7 +35,7 @@ class TestCase(testing.AsyncTestCase):
         def _on_connected():
             pass
 
-        def _on_disconnected(_exc):
+        def _on_disconnected(_proto, _exc):
             pass
 
         def _on_frame(channel, frame):

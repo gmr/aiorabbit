@@ -1468,9 +1468,20 @@ class Client(state.StateManager):
     def _on_connected(self):
         self._set_state(STATE_CONNECTED)
 
-    def _on_disconnected(self, exc: typing.Optional[Exception]) -> None:
+    def _on_disconnected(self,
+                         proto: protocol.AMQP,
+                         exc: typing.Optional[Exception]) -> None:
         self._logger.debug('Disconnected: %r', exc)
-        if not self.is_closed:
+        if proto is not self._protocol:
+            # A socket from a previous connection, closed after this
+            # client already started reconnecting
+            return self._logger.debug('Ignoring stale disconnect')
+        # Not guarded on is_closed, which is True whenever channel0 has
+        # closed or the transport was cleared, neither of which updates
+        # the state (#26). Skipping STATE_EXCEPTION preserves the more
+        # specific reason the broker gave in _on_remote_close
+        if self._state not in [STATE_CLOSING, STATE_CLOSED,
+                               state.STATE_EXCEPTION]:
             self._set_state(
                 state.STATE_EXCEPTION,
                 exceptions.ConnectionClosedException(
